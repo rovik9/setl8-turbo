@@ -1,0 +1,27 @@
+[package]
+name = "setl8-shared-interfaces"
+version = "0.1.0"
+edition = "2021"
+description = "Shared CPI instruction shapes for cross-program calls between the Setl8 vault and sector programs (lev-trading, options, predictions, ...). No account/state structs, no business logic, no protocol numbers -- see README.md."
+license = "UNLICENSED"
+repository = "https://github.com/rovik9/setl8-turbo"
+
+[lib]
+name = "setl8_shared_interfaces"
+path = "src/lib.rs"
+
+[dependencies]
+# `borsh` version pinned to match anchor-lang 0.32.1's own dependency (`borsh
+# ^0.10.3`), since Anchor's AnchorSerialize/AnchorDeserialize on the vault side
+# are thin wrappers over these same borsh 0.10 traits. If setl8-vault ever
+# upgrades to an Anchor release that moves to borsh 1.x, this pin must move
+# with it or serialized instruction data will stop round-tripping.
+borsh = "0.10"
+
+# `solana-program` version left as "2" (matches the `^2` requirement anchor-lang
+# 0.32.1 places on its own granular solana-* crates: solana-pubkey,
+# solana-instruction, etc.), so Cargo can unify versions in a consumer that
+# also depends on anchor-lang. Default features are used, which include
+# solana-program's own "borsh" feature -- this is what makes `Pubkey` fields
+# serialize/deserialize with the `borsh` 0.10 traits above.
+solana-program = "2"

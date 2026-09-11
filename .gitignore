@@ -1,0 +1,8 @@
+/target
+
+# This is a library crate consumed by other repos as a dependency; the
+# resolved-version snapshot only matters to this repo's own `cargo build`/tests,
+# not to consumers, so it's not committed (standard practice for Rust libraries).
+Cargo.lock
+
+.DS_Store
