@@ -1,6 +1,6 @@
 [package]
 name = "setl8-shared-interfaces"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Shared CPI instruction shapes for cross-program calls between the Setl8 vault and sector programs (lev-trading, options, predictions, ...). No account/state structs, no business logic, no protocol numbers -- see README.md."
 license = "UNLICENSED"
@@ -25,3 +25,14 @@ borsh = "0.10"
 # solana-program's own "borsh" feature -- this is what makes `Pubkey` fields
 # serialize/deserialize with the `borsh` 0.10 traits above.
 solana-program = "2"
+
+# OPTIONAL. Pulled in only when a consumer builds with `--features idl-build`,
+# to implement `anchor_lang::IdlBuild` for `ChallengeSize` so Anchor's IDL
+# generation (which requires every type reachable from an instruction's
+# arguments to implement this trait) doesn't fail to compile on this crate's
+# types. With default features, this crate has zero anchor-lang dependency,
+# exactly as before -- see the `idl-build` feature below and README.md.
+anchor-lang = { version = "0.32.1", optional = true }
+
+[features]
+idl-build = ["dep:anchor-lang", "anchor-lang/idl-build"]

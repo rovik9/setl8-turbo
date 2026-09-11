@@ -14,6 +14,28 @@ documented account order, since a consumer pinned to an older tag will
 otherwise silently CPI-fail or misencode data against a newer vault. Once at
 1.0.0, breaking changes bump MAJOR instead.
 
+## [0.2.1] - 2026-09-11
+
+**Non-breaking, opt-in.** Fixes the IDL-generation gap flagged in v0.1.0/
+v0.2.0: `ChallengeSize` couldn't satisfy Anchor's `IdlBuild` trait, since this
+crate has no `anchor-lang` dependency by design, so a consumer's
+`anchor build` failed to compile wherever `ChallengeSize` (or
+`Vec<ChallengeSize>`) appeared in an instruction argument struct.
+
+- Added `anchor-lang` as an **optional** dependency, gated behind a new
+  `idl-build` feature (`idl-build = ["dep:anchor-lang", "anchor-lang/idl-build"]`).
+  With default features, nothing changes -- `anchor-lang` does not appear in
+  the dependency tree at all (verified via `cargo tree`).
+- `ChallengeSize` now implements `anchor_lang::IdlBuild` when built with
+  `--features idl-build`, with a real `create_type()` (not the trait's
+  no-op default) so the type is actually included in the generated IDL/TS
+  client, not silently dropped.
+- Verified against `anchor-lang 0.32.1`'s and `anchor-lang-idl-spec 0.1.0`'s
+  actual source (downloaded from crates.io, not assumed from memory) for the
+  exact trait and `IdlTypeDef`/`IdlField`/`IdlType` shapes required.
+- `cargo build`, `cargo test`, and `cargo clippy --all-targets` all pass
+  clean both with and without `--features idl-build`.
+
 ## [0.2.0] - 2026-09-11
 
 **Breaking.** Two corrections to the v0.1.0 scaffold, ahead of any real

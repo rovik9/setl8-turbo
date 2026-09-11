@@ -99,6 +99,21 @@ inconsistency -- have been removed from this list; see `CHANGELOG.md`.)
    size/cost pair" in the original spec. Confirm this is sufficient -- no
    currency/denomination field, no min/max bounds, nothing else.
 
+## Optional `idl-build` feature
+
+This crate has no `anchor-lang` dependency by default. A consumer that runs
+`anchor build`/`anchor idl build` needs `ChallengeSize` to implement
+`anchor_lang::IdlBuild` (Anchor's IDL generator requires this for every type
+reachable from an instruction argument), so enable it only when generating an
+IDL:
+
+```toml
+setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.2.1", features = ["idl-build"] }
+```
+
+With default features (no `features = [...]`), `anchor-lang` does not appear
+in the dependency tree at all -- confirmed via `cargo tree`.
+
 ## Versioning
 
 **Not yet decided** between (a) a private Cargo registry with semver releases
