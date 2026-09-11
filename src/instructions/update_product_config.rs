@@ -12,19 +12,13 @@ pub const UPDATE_PRODUCT_CONFIG_DISCRIMINATOR: [u8; 8] = [148, 82, 249, 211, 243
 /// Instruction payload for `update_product_config`.
 ///
 /// Updates an already-registered product's config in place.
-///
-/// **Naming note (flagged, not silently fixed):** this struct's identifier
-/// field is `product_id`, while `RegisterProductArgs`'s equivalent field is
-/// `product_program_id`. Both are typed as `Pubkey` and, going by the spec
-/// this crate was built from, appear to refer to the same concept (the sector
-/// program's on-chain program ID). Kept exactly as specified rather than
-/// unified -- confirm whether this is intentional (e.g. `product_id` as a
-/// distinct registry key vs. `product_program_id` as the program address) or
-/// a naming inconsistency to fix before `setl8-vault` depends on this crate.
 #[derive(BorshSerialize, BorshDeserialize, Clone, Debug, PartialEq)]
 pub struct UpdateProductConfigArgs {
-    /// See naming note above.
-    pub product_id: Pubkey,
+    /// The sector program's on-chain program ID identifying which registered
+    /// product to update. Same field/concept as `RegisterProductArgs`'s
+    /// `product_program_id` -- naming was unified across this crate (was
+    /// `product_id` here in v0.1.0).
+    pub product_program_id: Pubkey,
     /// Replacement challenge size/cost tiers.
     pub challenge_sizes: Vec<ChallengeSize>,
     /// Replacement fee split, in basis points.

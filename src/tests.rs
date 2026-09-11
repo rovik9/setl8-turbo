@@ -2,14 +2,15 @@
 //! discriminator prefix and the documented fixed account count (before
 //! `remaining_accounts`). Not a substitute for on-chain integration testing
 //! against a real `setl8-vault` once one exists -- just a guard against
-//! obvious regressions (wrong account order, discriminator drift, etc.) in
-//! this crate's own shapes.
+//! obvious regressions (wrong account order, discriminator drift, signer
+//! flags, etc.) in this crate's own shapes.
 
 use solana_program::instruction::AccountMeta;
 use solana_program::pubkey::Pubkey;
 
 use crate::instructions::*;
 use crate::types::ChallengeSize;
+use crate::{derive_sector_authority, SECTOR_AUTHORITY_SEED};
 
 fn pk() -> Pubkey {
     Pubkey::new_unique()
@@ -60,7 +61,7 @@ fn update_product_config_shape() {
         pk(),
         &[],
         UpdateProductConfigArgs {
-            product_id: pk(),
+            product_program_id: pk(),
             challenge_sizes: vec![ChallengeSize { size: 100_000, cost: 1_000 }],
             fee_split_bps: 750,
             max_payout_count: 5,
@@ -92,9 +93,10 @@ fn deposit_fee_shape() {
         pk(),
         pk(),
         &[],
-        DepositFeeArgs { amount: 50, product_id: pk(), challenge_id: 1 },
+        DepositFeeArgs { amount: 50, product_program_id: pk(), challenge_id: 1 },
     );
     assert_eq!(ix.accounts.len(), 2);
+    assert!(ix.accounts[0].is_signer, "sector_authority must be a signer");
     assert_eq!(&ix.data[..8], &DEPOSIT_FEE_DISCRIMINATOR);
 }
 
@@ -108,12 +110,13 @@ fn request_payout_shape() {
         RequestPayoutArgs {
             trader_wallet: pk(),
             amount: 500,
-            product_id: pk(),
+            product_program_id: pk(),
             challenge_id: 1,
             proposed_request_id: 7,
         },
     );
     assert_eq!(ix.accounts.len(), 2);
+    assert!(ix.accounts[0].is_signer, "sector_authority must be a signer");
     assert_eq!(&ix.data[..8], &REQUEST_PAYOUT_DISCRIMINATOR);
 }
 
@@ -124,9 +127,10 @@ fn flag_trader_failed_shape() {
         pk(),
         pk(),
         &[],
-        FlagTraderFailedArgs { trader_wallet: pk(), product_id: pk(), challenge_id: 1 },
+        FlagTraderFailedArgs { trader_wallet: pk(), product_program_id: pk(), challenge_id: 1 },
     );
     assert_eq!(ix.accounts.len(), 2);
+    assert!(ix.accounts[0].is_signer, "sector_authority must be a signer");
     assert_eq!(&ix.data[..8], &FLAG_TRADER_FAILED_DISCRIMINATOR);
 }
 
@@ -138,8 +142,27 @@ fn remaining_accounts_are_appended_after_fixed_accounts() {
         pk(),
         pk(),
         std::slice::from_ref(&extra),
-        FlagTraderFailedArgs { trader_wallet: pk(), product_id: pk(), challenge_id: 1 },
+        FlagTraderFailedArgs { trader_wallet: pk(), product_program_id: pk(), challenge_id: 1 },
     );
     assert_eq!(ix.accounts.len(), 3);
     assert_eq!(ix.accounts[2], extra);
+}
+
+#[test]
+fn sector_authority_derivation_is_deterministic_and_program_scoped() {
+    let sector_program_id = pk();
+    let (authority_a, bump_a) = derive_sector_authority(&sector_program_id);
+    let (authority_b, bump_b) = derive_sector_authority(&sector_program_id);
+    assert_eq!(authority_a, authority_b);
+    assert_eq!(bump_a, bump_b);
+
+    let (expected, expected_bump) =
+        Pubkey::find_program_address(&[SECTOR_AUTHORITY_SEED], &sector_program_id);
+    assert_eq!(authority_a, expected);
+    assert_eq!(bump_a, expected_bump);
+
+    // A different program ID must derive a different authority PDA -- this is
+    // what makes the account a proof of *that specific program's* identity.
+    let (authority_other, _) = derive_sector_authority(&pk());
+    assert_ne!(authority_a, authority_other);
 }

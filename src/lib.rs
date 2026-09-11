@@ -35,25 +35,47 @@ pub use instructions::*;
 pub use types::ChallengeSize;
 
 use borsh::BorshSerialize;
+use solana_program::pubkey::Pubkey;
 
 /// Length in bytes of the Anchor-style instruction discriminator used by
 /// every instruction in this crate.
 pub const DISCRIMINATOR_LEN: usize = 8;
 
-/// The Instructions sysvar ID, re-exported here because it's expected to be
-/// the CPI-auth identity account on every CPI-auth-context instruction
-/// (`deposit_fee`, `request_payout`, `flag_trader_failed`).
+/// Seed for every sector program's `sector_authority` PDA -- the account that
+/// proves CPI-caller identity to `setl8-vault` on every CPI-auth-context
+/// instruction (`deposit_fee`, `request_payout`, `flag_trader_failed`).
 ///
-/// **Flagged assumption**: this crate assumes `setl8-vault` authenticates its
-/// direct caller via Solana's instruction-introspection pattern (reading the
-/// calling program's ID off this sysvar and checking it against
-/// `ProductRegistry.product_program_id`), rather than e.g. a signer-PDA-based
-/// identity scheme. This was not specified in the original request and needs
-/// confirmation once `setl8-vault`'s CPI-auth check is actually implemented.
-/// If the mechanism differs, every CPI-auth-context builder function in
-/// `src/instructions/` needs its `calling_program_identity` account
-/// reconsidered.
-pub use solana_program::sysvar::instructions::ID as INSTRUCTIONS_SYSVAR_ID;
+/// Each sector program derives its own authority PDA as
+/// `Pubkey::find_program_address(&[SECTOR_AUTHORITY_SEED], &sector_program_id)`
+/// (see [`derive_sector_authority`]) -- under **its own** program ID, not the
+/// vault's. It signs its CPI into the vault via `invoke_signed` using that
+/// PDA's seeds. `setl8-vault` authenticates the caller by checking that the
+/// signer account's key equals
+/// `find_program_address(&[SECTOR_AUTHORITY_SEED], &registry.product_program_id)`
+/// for the `product_program_id` on the instruction. Only the real calling
+/// program can produce a valid `invoke_signed` signature for a PDA derived
+/// from its own program ID, so this is cryptographic proof of caller
+/// identity, not a self-reported claim.
+///
+/// This replaces an earlier v0.1.0 draft of this crate that assumed
+/// Instructions-sysvar introspection for this purpose -- that mechanism
+/// doesn't actually prove CPI-caller identity (the sysvar is for inspecting
+/// sibling top-level instructions, not the immediate CPI caller), so it's
+/// gone entirely. PDA-signer verification is the correct mechanism and is
+/// what every CPI-auth-context builder in this crate now uses.
+pub const SECTOR_AUTHORITY_SEED: &[u8] = b"setl8_sector_authority";
+
+/// Derives a sector program's `sector_authority` PDA under its own program
+/// ID, using [`SECTOR_AUTHORITY_SEED`]. Returns `(pubkey, bump)`.
+///
+/// A sector program calls this (or the equivalent `create_program_address`
+/// with a cached bump, for efficiency) to get the account it must pass as
+/// `sector_authority` to `deposit_fee`/`request_payout`/`flag_trader_failed`,
+/// and to sign its `invoke_signed` CPI into the vault with
+/// `&[SECTOR_AUTHORITY_SEED, &[bump]]`.
+pub fn derive_sector_authority(sector_program_id: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[SECTOR_AUTHORITY_SEED], sector_program_id)
+}
 
 /// Concatenates an Anchor-style 8-byte discriminator with the Borsh-serialized
 /// instruction args to form raw instruction data.

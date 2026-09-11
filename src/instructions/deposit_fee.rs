@@ -22,37 +22,41 @@ pub struct DepositFeeArgs {
     /// Fee amount being deposited, in whatever base unit `setl8-vault`
     /// standardizes on. Opaque to this crate.
     pub amount: u64,
-    pub product_id: Pubkey,
+    pub product_program_id: Pubkey,
     pub challenge_id: u64,
 }
 
 /// Builds a `deposit_fee` instruction.
 ///
 /// # Accounts
-/// 0. `[]` `calling_program_identity` -- the CPI-auth identity account. See
-///    [`crate::INSTRUCTIONS_SYSVAR_ID`] doc comment for the flagged assumption
-///    this represents: that `setl8-vault` authenticates its direct caller via
-///    Solana instruction introspection (this account is expected to be the
-///    Instructions sysvar) rather than a signer-PDA scheme. The vault reads
-///    the calling program's ID from it and checks that against
-///    `ProductRegistry.product_program_id` for `product_id`.
+/// 0. `[signer]` `sector_authority` -- the CPI-auth identity account: the
+///    calling sector program's own PDA, derived as
+///    [`crate::derive_sector_authority`] under **its own** program ID using
+///    [`crate::SECTOR_AUTHORITY_SEED`], and signed via `invoke_signed`. The
+///    vault authenticates the caller by checking that this account's key
+///    equals `find_program_address(&[SECTOR_AUTHORITY_SEED],
+///    &registry.product_program_id)` for `product_program_id` below --
+///    cryptographic proof of caller identity, since only the real calling
+///    program can produce a valid `invoke_signed` signature for a PDA
+///    derived from its own program ID.
 /// 1. `[writable]` `product_registry` -- the vault's `ProductRegistry`
-///    account, read to validate `product_id`/`challenge_id` and (assumed)
-///    written to track deposited fees. Marked writable as a conservative
-///    default -- confirm against `setl8-vault`'s actual mutation needs.
+///    account, read to validate `product_program_id`/`challenge_id` and
+///    (assumed) written to track deposited fees. Marked writable as a
+///    conservative default -- confirm against `setl8-vault`'s actual
+///    mutation needs.
 ///    2..N `remaining_accounts` -- token-movement accounts (source, destination,
 ///    token program, etc.) and any other accounts `setl8-vault` requires.
 ///    None of that layout is known to this crate by design. An empty slice is
 ///    valid for now.
 pub fn deposit_fee(
     vault_program_id: Pubkey,
-    calling_program_identity: Pubkey,
+    sector_authority: Pubkey,
     product_registry: Pubkey,
     remaining_accounts: &[AccountMeta],
     args: DepositFeeArgs,
 ) -> Instruction {
     let mut accounts = vec![
-        AccountMeta::new_readonly(calling_program_identity, false),
+        AccountMeta::new_readonly(sector_authority, true),
         AccountMeta::new(product_registry, false),
     ];
     accounts.extend_from_slice(remaining_accounts);
