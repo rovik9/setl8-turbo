@@ -95,7 +95,8 @@ pub fn build_instruction_data<T: BorshSerialize>(
 ) -> Vec<u8> {
     let mut data = Vec::with_capacity(DISCRIMINATOR_LEN + 64);
     data.extend_from_slice(&discriminator);
-    args.serialize(&mut data)
-        .expect("Borsh serialization of instruction args is infallible for the types in this crate");
+    args.serialize(&mut data).expect(
+        "Borsh serialization of instruction args is infallible for the types in this crate",
+    );
     data
 }

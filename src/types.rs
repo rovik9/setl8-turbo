@@ -36,7 +36,9 @@ pub struct ChallengeSize {
 #[cfg(feature = "idl-build")]
 impl anchor_lang::IdlBuild for ChallengeSize {
     fn create_type() -> Option<anchor_lang::idl::types::IdlTypeDef> {
-        use anchor_lang::idl::types::{IdlDefinedFields, IdlField, IdlType, IdlTypeDef, IdlTypeDefTy};
+        use anchor_lang::idl::types::{
+            IdlDefinedFields, IdlField, IdlType, IdlTypeDef, IdlTypeDefTy,
+        };
 
         Some(IdlTypeDef {
             name: "ChallengeSize".into(),
@@ -46,8 +48,16 @@ impl anchor_lang::IdlBuild for ChallengeSize {
             generics: vec![],
             ty: IdlTypeDefTy::Struct {
                 fields: Some(IdlDefinedFields::Named(vec![
-                    IdlField { name: "size".into(), docs: vec![], ty: IdlType::U64 },
-                    IdlField { name: "cost".into(), docs: vec![], ty: IdlType::U64 },
+                    IdlField {
+                        name: "size".into(),
+                        docs: vec![],
+                        ty: IdlType::U64,
+                    },
+                    IdlField {
+                        name: "cost".into(),
+                        docs: vec![],
+                        ty: IdlType::U64,
+                    },
                 ])),
             },
         })

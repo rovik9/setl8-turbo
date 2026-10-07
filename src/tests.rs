@@ -27,7 +27,10 @@ fn register_product_shape() {
         RegisterProductArgs {
             product_program_id: pk(),
             fee_split_bps: 500,
-            challenge_sizes: vec![ChallengeSize { size: 10_000, cost: 100 }],
+            challenge_sizes: vec![ChallengeSize {
+                size: 10_000,
+                cost: 100,
+            }],
             max_payout_count: 3,
             reset_price_bps: vec![100, 150, 200, 300, 450],
         },
@@ -83,7 +86,9 @@ fn reactivate_product_shape() {
         pk(),
         pk(),
         &[],
-        ReactivateProductArgs { product_program_id: pk() },
+        ReactivateProductArgs {
+            product_program_id: pk(),
+        },
     );
     assert_eq!(ix.accounts.len(), 3);
     assert_eq!(&ix.data[..8], &REACTIVATE_PRODUCT_DISCRIMINATOR);
@@ -99,7 +104,10 @@ fn update_product_config_shape() {
         &[],
         UpdateProductConfigArgs {
             product_program_id: pk(),
-            challenge_sizes: vec![ChallengeSize { size: 100_000, cost: 1_000 }],
+            challenge_sizes: vec![ChallengeSize {
+                size: 100_000,
+                cost: 1_000,
+            }],
             fee_split_bps: 750,
             max_payout_count: 5,
             reset_price_bps: vec![],
@@ -140,7 +148,10 @@ fn deposit_fee_shape() {
         },
     );
     assert_eq!(ix.accounts.len(), 2);
-    assert!(ix.accounts[0].is_signer, "sector_authority must be a signer");
+    assert!(
+        ix.accounts[0].is_signer,
+        "sector_authority must be a signer"
+    );
     assert_eq!(&ix.data[..8], &DEPOSIT_FEE_DISCRIMINATOR);
 }
 
@@ -160,7 +171,10 @@ fn request_payout_shape() {
         },
     );
     assert_eq!(ix.accounts.len(), 2);
-    assert!(ix.accounts[0].is_signer, "sector_authority must be a signer");
+    assert!(
+        ix.accounts[0].is_signer,
+        "sector_authority must be a signer"
+    );
     assert_eq!(&ix.data[..8], &REQUEST_PAYOUT_DISCRIMINATOR);
 }
 
@@ -171,10 +185,17 @@ fn flag_trader_failed_shape() {
         pk(),
         pk(),
         &[],
-        FlagTraderFailedArgs { trader_wallet: pk(), product_program_id: pk(), challenge_id: 1 },
+        FlagTraderFailedArgs {
+            trader_wallet: pk(),
+            product_program_id: pk(),
+            challenge_id: 1,
+        },
     );
     assert_eq!(ix.accounts.len(), 2);
-    assert!(ix.accounts[0].is_signer, "sector_authority must be a signer");
+    assert!(
+        ix.accounts[0].is_signer,
+        "sector_authority must be a signer"
+    );
     assert_eq!(&ix.data[..8], &FLAG_TRADER_FAILED_DISCRIMINATOR);
 }
 
@@ -186,7 +207,11 @@ fn remaining_accounts_are_appended_after_fixed_accounts() {
         pk(),
         pk(),
         std::slice::from_ref(&extra),
-        FlagTraderFailedArgs { trader_wallet: pk(), product_program_id: pk(), challenge_id: 1 },
+        FlagTraderFailedArgs {
+            trader_wallet: pk(),
+            product_program_id: pk(),
+            challenge_id: 1,
+        },
     );
     assert_eq!(ix.accounts.len(), 3);
     assert_eq!(ix.accounts[2], extra);
@@ -218,11 +243,21 @@ fn record_activity_shape() {
         pk(),
         pk(),
         &[],
-        RecordActivityArgs { trader_wallet: pk(), product_program_id: pk(), challenge_id: 9 },
+        RecordActivityArgs {
+            trader_wallet: pk(),
+            product_program_id: pk(),
+            challenge_id: 9,
+        },
     );
     assert_eq!(ix.accounts.len(), 2);
-    assert!(ix.accounts[0].is_signer && !ix.accounts[0].is_writable, "sector_authority signs, read-only");
-    assert!(!ix.accounts[1].is_writable, "registry is read-only for record_activity");
+    assert!(
+        ix.accounts[0].is_signer && !ix.accounts[0].is_writable,
+        "sector_authority signs, read-only"
+    );
+    assert!(
+        !ix.accounts[1].is_writable,
+        "registry is read-only for record_activity"
+    );
     assert_eq!(&ix.data[..8], &RECORD_ACTIVITY_DISCRIMINATOR);
 }
 
@@ -233,7 +268,11 @@ fn mark_abandoned_shape() {
         pk(),
         pk(),
         &[],
-        MarkAbandonedArgs { trader_wallet: pk(), product_program_id: pk(), challenge_id: 9 },
+        MarkAbandonedArgs {
+            trader_wallet: pk(),
+            product_program_id: pk(),
+            challenge_id: 9,
+        },
     );
     assert_eq!(ix.accounts.len(), 2);
     assert!(ix.accounts[0].is_signer, "caller must sign (fee payer)");
@@ -258,15 +297,30 @@ fn deposit_reset_shape() {
         },
     );
     assert_eq!(ix.accounts.len(), 2);
-    assert!(ix.accounts[0].is_signer, "sector_authority must be a signer");
+    assert!(
+        ix.accounts[0].is_signer,
+        "sector_authority must be a signer"
+    );
     assert_eq!(&ix.data[..8], &DEPOSIT_RESET_DISCRIMINATOR);
 }
 
 #[test]
 fn pause_product_shape() {
-    let ix = pause_product(pk(), pk(), pk(), pk(), &[], PauseProductArgs { product_program_id: pk() });
+    let ix = pause_product(
+        pk(),
+        pk(),
+        pk(),
+        pk(),
+        &[],
+        PauseProductArgs {
+            product_program_id: pk(),
+        },
+    );
     assert_eq!(ix.accounts.len(), 3);
-    assert!(ix.accounts[0].is_signer && ix.accounts[1].is_signer, "both admins must sign");
+    assert!(
+        ix.accounts[0].is_signer && ix.accounts[1].is_signer,
+        "both admins must sign"
+    );
     assert!(ix.accounts[2].is_writable);
     assert_eq!(&ix.data[..8], &PAUSE_PRODUCT_DISCRIMINATOR);
 }
@@ -277,7 +331,10 @@ fn register_product_args_round_trip_with_reset_table() {
     let args = RegisterProductArgs {
         product_program_id: pk(),
         fee_split_bps: 6500,
-        challenge_sizes: vec![ChallengeSize { size: 2_500, cost: 30 }],
+        challenge_sizes: vec![ChallengeSize {
+            size: 2_500,
+            cost: 30,
+        }],
         max_payout_count: 5,
         reset_price_bps: vec![100, 125, 150, 200, 300, 450],
     };
@@ -288,7 +345,11 @@ fn register_product_args_round_trip_with_reset_table() {
 
 #[test]
 fn outcome_enums_round_trip_and_reject_unknown() {
-    for o in [ActivityOutcome::Recorded, ActivityOutcome::Throttled, ActivityOutcome::Abandoned] {
+    for o in [
+        ActivityOutcome::Recorded,
+        ActivityOutcome::Throttled,
+        ActivityOutcome::Abandoned,
+    ] {
         assert_eq!(ActivityOutcome::from_u8(o as u8), Some(o));
     }
     for o in [PayoutOutcome::Paid, PayoutOutcome::Abandoned] {
@@ -303,8 +364,20 @@ fn outcome_enums_round_trip_and_reject_unknown() {
 /// via a tiny known-answer table generated from the same rule.
 #[test]
 fn new_discriminators_match_anchor_rule_known_answers() {
-    assert_eq!(RECORD_ACTIVITY_DISCRIMINATOR, [199, 86, 104, 65, 200, 211, 71, 50]);
-    assert_eq!(MARK_ABANDONED_DISCRIMINATOR, [2, 20, 252, 203, 247, 72, 6, 175]);
-    assert_eq!(DEPOSIT_RESET_DISCRIMINATOR, [25, 27, 129, 85, 180, 120, 189, 155]);
-    assert_eq!(PAUSE_PRODUCT_DISCRIMINATOR, [146, 44, 126, 129, 251, 223, 185, 185]);
+    assert_eq!(
+        RECORD_ACTIVITY_DISCRIMINATOR,
+        [199, 86, 104, 65, 200, 211, 71, 50]
+    );
+    assert_eq!(
+        MARK_ABANDONED_DISCRIMINATOR,
+        [2, 20, 252, 203, 247, 72, 6, 175]
+    );
+    assert_eq!(
+        DEPOSIT_RESET_DISCRIMINATOR,
+        [25, 27, 129, 85, 180, 120, 189, 155]
+    );
+    assert_eq!(
+        PAUSE_PRODUCT_DISCRIMINATOR,
+        [146, 44, 126, 129, 251, 223, 185, 185]
+    );
 }
