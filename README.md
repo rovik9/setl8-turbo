@@ -34,7 +34,11 @@ fails to compile in a consumer that hasn't updated to match.
 | `reactivate_product` | 2-of-2 admin multisig |
 | `update_product_config` | 2-of-2 admin multisig |
 | `admin_withdraw_marketing_funds` | 2-of-2 admin multisig, fixed SL8 wallet destination |
+| `pause_product` | 2-of-2 admin multisig |
 | `deposit_fee` | PDA-signer (`sector_authority`) |
+| `deposit_reset` | PDA-signer (`sector_authority`) |
+| `record_activity` | PDA-signer (`sector_authority`) |
+| `mark_abandoned` | none (permissionless; any signer) |
 | `request_payout` | PDA-signer (`sector_authority`) |
 | `flag_trader_failed` | PDA-signer (`sector_authority`) |
 
@@ -108,7 +112,7 @@ reachable from an instruction argument), so enable it only when generating an
 IDL:
 
 ```toml
-setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.2.1", features = ["idl-build"] }
+setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.3.0", features = ["idl-build"] }
 ```
 
 With default features (no `features = [...]`), `anchor-lang` does not appear

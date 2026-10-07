@@ -29,6 +29,11 @@ pub struct RegisterProductArgs {
     pub challenge_sizes: Vec<ChallengeSize>,
     /// Cap on outstanding payouts the vault will allow for this product.
     pub max_payout_count: u64,
+    /// Phase-specific reset prices as basis points of account size, indexed
+    /// by the 0-based phase a trader failed in (e.g. `[100, 150, ... 450]`
+    /// for 1%..4.5%). Empty means the product offers no phase resets. Used
+    /// by `deposit_reset`; opaque to this crate.
+    pub reset_price_bps: Vec<u16>,
 }
 
 /// Builds a `register_product` instruction.

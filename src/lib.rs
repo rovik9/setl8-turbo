@@ -32,7 +32,7 @@ pub mod types;
 mod tests;
 
 pub use instructions::*;
-pub use types::ChallengeSize;
+pub use types::{ActivityOutcome, ChallengeSize, PayoutOutcome};
 
 use borsh::BorshSerialize;
 use solana_program::pubkey::Pubkey;

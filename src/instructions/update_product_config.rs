@@ -25,6 +25,9 @@ pub struct UpdateProductConfigArgs {
     pub fee_split_bps: u16,
     /// Replacement cap on outstanding payouts.
     pub max_payout_count: u64,
+    /// Replacement phase-reset price table (basis points of account size per
+    /// 0-based phase). See `RegisterProductArgs::reset_price_bps`.
+    pub reset_price_bps: Vec<u16>,
 }
 
 /// Builds an `update_product_config` instruction.

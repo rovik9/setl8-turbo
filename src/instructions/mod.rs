@@ -28,7 +28,11 @@
 
 mod admin_withdraw_marketing_funds;
 mod deposit_fee;
+mod deposit_reset;
 mod flag_trader_failed;
+mod mark_abandoned;
+mod pause_product;
+mod record_activity;
 mod reactivate_product;
 mod register_product;
 mod request_payout;
@@ -36,7 +40,11 @@ mod update_product_config;
 
 pub use admin_withdraw_marketing_funds::*;
 pub use deposit_fee::*;
+pub use deposit_reset::*;
 pub use flag_trader_failed::*;
+pub use mark_abandoned::*;
+pub use pause_product::*;
+pub use record_activity::*;
 pub use reactivate_product::*;
 pub use register_product::*;
 pub use request_payout::*;

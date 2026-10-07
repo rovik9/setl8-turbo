@@ -53,3 +53,55 @@ impl anchor_lang::IdlBuild for ChallengeSize {
         })
     }
 }
+
+/// What `record_activity` did, returned by the vault via Solana return data
+/// (a single `u8`). A sector program reads it with
+/// `solana_program::program::get_return_data` right after the CPI.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ActivityOutcome {
+    /// Timestamp refreshed.
+    Recorded = 0,
+    /// Called again inside the vault's throttle window; nothing changed.
+    Throttled = 1,
+    /// The challenge was already past its inactivity window, so the vault
+    /// flipped it to `Abandoned`. The sector program must treat it as dead
+    /// (reject the order/phase event and close any open positions).
+    Abandoned = 2,
+}
+
+impl ActivityOutcome {
+    pub fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            0 => Some(Self::Recorded),
+            1 => Some(Self::Throttled),
+            2 => Some(Self::Abandoned),
+            _ => None,
+        }
+    }
+}
+
+/// What `request_payout` did, returned via Solana return data (a single
+/// `u8`). The call can succeed without paying anything: if the challenge is
+/// stale, the vault records `Abandoned` and returns `Abandoned`, because an
+/// error would revert that state change. A sector program MUST check this
+/// before telling the trader they were paid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum PayoutOutcome {
+    /// Payout accepted and recorded.
+    Paid = 0,
+    /// Challenge was past its inactivity window; it is now `Abandoned` and
+    /// nothing was paid.
+    Abandoned = 1,
+}
+
+impl PayoutOutcome {
+    pub fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            0 => Some(Self::Paid),
+            1 => Some(Self::Abandoned),
+            _ => None,
+        }
+    }
+}

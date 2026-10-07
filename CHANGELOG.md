@@ -14,6 +14,33 @@ documented account order, since a consumer pinned to an older tag will
 otherwise silently CPI-fail or misencode data against a newer vault. Once at
 1.0.0, breaking changes bump MAJOR instead.
 
+## [0.3.0] - 2026-10-08
+
+**Breaking** (pre-1.0, so MINOR bump). Adds the lifecycle instructions agreed
+in the Oct 4-8 design session. Pin consumers to `v0.3.0`.
+
+- **New `record_activity`** (CPI-auth). Sector program reports an order action
+  or phase pass so the vault can refresh the challenge's inactivity clock.
+  Vault throttles to once per day per challenge.
+- **New `mark_abandoned`** (permissionless). Flips an `Active` challenge to
+  `Abandoned` once it is past the inactivity window. No heartbeat sweep.
+- **New `deposit_reset`** (CPI-auth). Phase-specific reset of a `Failed`
+  record at a reduced price. The vault copies `payout_count` and account size
+  from the previous record itself, so a sector bug cannot inflate the payout
+  cap. `Failed` only, once per record; `Abandoned` is not resettable.
+- **New `pause_product`** (2-of-2 admin). Manual planned-upgrade pause,
+  mirrors `reactivate_product`. Pauses freeze trader inactivity clocks.
+- **New return-data enums `ActivityOutcome` and `PayoutOutcome`.**
+  `request_payout` and `record_activity` return `Ok` with these (via Solana
+  return data) when they flip a stale challenge to `Abandoned`, because an
+  error would revert the status write. Sector programs MUST read them.
+- **`DepositFeeArgs` gains `trader_wallet` and `account_size`** (appended).
+  The vault keys `TraderState` by wallet + product + challenge and validates
+  `(account_size, amount)` against the registry's tiers.
+- **`RegisterProductArgs` / `UpdateProductConfigArgs` gain
+  `reset_price_bps: Vec<u16>`** (appended): reset price per 0-based phase, in
+  basis points of account size.
+
 ## [0.2.1] - 2026-09-11
 
 **Non-breaking, opt-in.** Fixes the IDL-generation gap flagged in v0.1.0/

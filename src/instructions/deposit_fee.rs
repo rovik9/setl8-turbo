@@ -24,6 +24,16 @@ pub struct DepositFeeArgs {
     pub amount: u64,
     pub product_program_id: Pubkey,
     pub challenge_id: u64,
+    /// Added in v0.3.0 (breaking). The vault keys each `TraderState` by
+    /// wallet + product + challenge, so it must be told whose challenge this
+    /// is. Appended last: Borsh field order is the wire order, and the vault
+    /// handler's parameter order must match.
+    pub trader_wallet: Pubkey,
+    /// Added in v0.3.0 (breaking). The tier being purchased. The vault checks
+    /// that `(account_size, amount)` is an exact `ChallengeSize` entry in the
+    /// product's registry, and stores `account_size` so a later `deposit_reset`
+    /// can be priced from it.
+    pub account_size: u64,
 }
 
 /// Builds a `deposit_fee` instruction.
@@ -44,8 +54,10 @@ pub struct DepositFeeArgs {
 ///    (assumed) written to track deposited fees. Marked writable as a
 ///    conservative default -- confirm against `setl8-vault`'s actual
 ///    mutation needs.
-///    2..N `remaining_accounts` -- token-movement accounts (source, destination,
-///    token program, etc.) and any other accounts `setl8-vault` requires.
+///    2..N `remaining_accounts` -- in this order: the new challenge's
+///    `TraderState` (writable, created), the rent payer (signer, writable),
+///    the system program, then token-movement accounts (source, destination,
+///    token program, etc.) and anything else `setl8-vault` requires.
 ///    None of that layout is known to this crate by design. An empty slice is
 ///    valid for now.
 pub fn deposit_fee(

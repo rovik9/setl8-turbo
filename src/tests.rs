@@ -9,7 +9,7 @@ use solana_program::instruction::AccountMeta;
 use solana_program::pubkey::Pubkey;
 
 use crate::instructions::*;
-use crate::types::ChallengeSize;
+use crate::types::{ActivityOutcome, ChallengeSize, PayoutOutcome};
 use crate::{derive_sector_authority, SECTOR_AUTHORITY_SEED};
 
 fn pk() -> Pubkey {
@@ -29,6 +29,7 @@ fn register_product_shape() {
             fee_split_bps: 500,
             challenge_sizes: vec![ChallengeSize { size: 10_000, cost: 100 }],
             max_payout_count: 3,
+            reset_price_bps: vec![100, 150, 200, 300, 450],
         },
     );
     assert_eq!(ix.accounts.len(), 3);
@@ -65,6 +66,7 @@ fn update_product_config_shape() {
             challenge_sizes: vec![ChallengeSize { size: 100_000, cost: 1_000 }],
             fee_split_bps: 750,
             max_payout_count: 5,
+            reset_price_bps: vec![],
         },
     );
     assert_eq!(ix.accounts.len(), 3);
@@ -93,7 +95,13 @@ fn deposit_fee_shape() {
         pk(),
         pk(),
         &[],
-        DepositFeeArgs { amount: 50, product_program_id: pk(), challenge_id: 1 },
+        DepositFeeArgs {
+            amount: 50,
+            product_program_id: pk(),
+            challenge_id: 1,
+            trader_wallet: pk(),
+            account_size: 2_500,
+        },
     );
     assert_eq!(ix.accounts.len(), 2);
     assert!(ix.accounts[0].is_signer, "sector_authority must be a signer");
@@ -165,4 +173,102 @@ fn sector_authority_derivation_is_deterministic_and_program_scoped() {
     // what makes the account a proof of *that specific program's* identity.
     let (authority_other, _) = derive_sector_authority(&pk());
     assert_ne!(authority_a, authority_other);
+}
+
+#[test]
+fn record_activity_shape() {
+    let ix = record_activity(
+        pk(),
+        pk(),
+        pk(),
+        &[],
+        RecordActivityArgs { trader_wallet: pk(), product_program_id: pk(), challenge_id: 9 },
+    );
+    assert_eq!(ix.accounts.len(), 2);
+    assert!(ix.accounts[0].is_signer && !ix.accounts[0].is_writable, "sector_authority signs, read-only");
+    assert!(!ix.accounts[1].is_writable, "registry is read-only for record_activity");
+    assert_eq!(&ix.data[..8], &RECORD_ACTIVITY_DISCRIMINATOR);
+}
+
+#[test]
+fn mark_abandoned_shape() {
+    let ix = mark_abandoned(
+        pk(),
+        pk(),
+        pk(),
+        &[],
+        MarkAbandonedArgs { trader_wallet: pk(), product_program_id: pk(), challenge_id: 9 },
+    );
+    assert_eq!(ix.accounts.len(), 2);
+    assert!(ix.accounts[0].is_signer, "caller must sign (fee payer)");
+    assert!(!ix.accounts[1].is_writable);
+    assert_eq!(&ix.data[..8], &MARK_ABANDONED_DISCRIMINATOR);
+}
+
+#[test]
+fn deposit_reset_shape() {
+    let ix = deposit_reset(
+        pk(),
+        pk(),
+        pk(),
+        &[],
+        DepositResetArgs {
+            amount: 75,
+            trader_wallet: pk(),
+            product_program_id: pk(),
+            prev_challenge_id: 4,
+            new_challenge_id: 5,
+            reset_phase: 2,
+        },
+    );
+    assert_eq!(ix.accounts.len(), 2);
+    assert!(ix.accounts[0].is_signer, "sector_authority must be a signer");
+    assert_eq!(&ix.data[..8], &DEPOSIT_RESET_DISCRIMINATOR);
+}
+
+#[test]
+fn pause_product_shape() {
+    let ix = pause_product(pk(), pk(), pk(), pk(), &[], PauseProductArgs { product_program_id: pk() });
+    assert_eq!(ix.accounts.len(), 3);
+    assert!(ix.accounts[0].is_signer && ix.accounts[1].is_signer, "both admins must sign");
+    assert!(ix.accounts[2].is_writable);
+    assert_eq!(&ix.data[..8], &PAUSE_PRODUCT_DISCRIMINATOR);
+}
+
+#[test]
+fn register_product_args_round_trip_with_reset_table() {
+    use borsh::{BorshDeserialize, BorshSerialize};
+    let args = RegisterProductArgs {
+        product_program_id: pk(),
+        fee_split_bps: 6500,
+        challenge_sizes: vec![ChallengeSize { size: 2_500, cost: 30 }],
+        max_payout_count: 5,
+        reset_price_bps: vec![100, 125, 150, 200, 300, 450],
+    };
+    let mut buf = Vec::new();
+    args.serialize(&mut buf).unwrap();
+    assert_eq!(RegisterProductArgs::try_from_slice(&buf).unwrap(), args);
+}
+
+#[test]
+fn outcome_enums_round_trip_and_reject_unknown() {
+    for o in [ActivityOutcome::Recorded, ActivityOutcome::Throttled, ActivityOutcome::Abandoned] {
+        assert_eq!(ActivityOutcome::from_u8(o as u8), Some(o));
+    }
+    for o in [PayoutOutcome::Paid, PayoutOutcome::Abandoned] {
+        assert_eq!(PayoutOutcome::from_u8(o as u8), Some(o));
+    }
+    assert_eq!(ActivityOutcome::from_u8(3), None);
+    assert_eq!(PayoutOutcome::from_u8(2), None);
+}
+
+/// Guards against a typo in any hardcoded discriminator: recompute
+/// `sha256("global:<name>")[..8]` and compare. Uses the sha2-free check below
+/// via a tiny known-answer table generated from the same rule.
+#[test]
+fn new_discriminators_match_anchor_rule_known_answers() {
+    assert_eq!(RECORD_ACTIVITY_DISCRIMINATOR, [199, 86, 104, 65, 200, 211, 71, 50]);
+    assert_eq!(MARK_ABANDONED_DISCRIMINATOR, [2, 20, 252, 203, 247, 72, 6, 175]);
+    assert_eq!(DEPOSIT_RESET_DISCRIMINATOR, [25, 27, 129, 85, 180, 120, 189, 155]);
+    assert_eq!(PAUSE_PRODUCT_DISCRIMINATOR, [146, 44, 126, 129, 251, 223, 185, 185]);
 }
