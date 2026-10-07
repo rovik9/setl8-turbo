@@ -39,7 +39,10 @@ pub struct RegisterProductArgs {
 /// Builds a `register_product` instruction.
 ///
 /// # Accounts
-/// 0. `[signer]` `sl8_admin` -- SL8's half of the 2-of-2 admin multisig.
+/// 0. `[signer, writable]` `sl8_admin` -- SL8's half of the 2-of-2 admin
+///    multisig; also pays rent for `product_registry`, so it must be writable
+///    (a read-only flag here fails with `PrivilegeEscalation` unless
+///    `sl8_admin` happens to be the transaction fee payer).
 /// 1. `[signer]` `rov_admin` -- Rov's half of the 2-of-2 admin multisig. Both
 ///    are required; there is no single-admin path for this instruction.
 /// 2. `[writable]` `product_registry` -- the vault's `ProductRegistry` account
@@ -62,7 +65,7 @@ pub fn register_product(
     args: RegisterProductArgs,
 ) -> Instruction {
     let mut accounts = vec![
-        AccountMeta::new_readonly(sl8_admin, true),
+        AccountMeta::new(sl8_admin, true),
         AccountMeta::new_readonly(rov_admin, true),
         AccountMeta::new(product_registry, false),
     ];

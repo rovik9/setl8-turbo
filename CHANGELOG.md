@@ -14,6 +14,22 @@ documented account order, since a consumer pinned to an older tag will
 otherwise silently CPI-fail or misencode data against a newer vault. Once at
 1.0.0, breaking changes bump MAJOR instead.
 
+## [0.3.1] - 2026-10-08
+
+**Bug fix, no wire-format change** (PATCH). Pin consumers to `v0.3.1`.
+
+- **`register_product`: `sl8_admin` is now marked writable** (`[signer,
+  writable]`). The vault makes `sl8_admin` the payer that funds the new
+  `ProductRegistry` PDA, so it must be writable. v0.3.0 built it read-only,
+  which only worked when `sl8_admin` was also the transaction fee payer; with
+  any other fee payer the runtime rejects the instruction with
+  `PrivilegeEscalation` ("writable privilege escalated"). Found while writing
+  LiteSVM integration tests against the vault. Instruction data, discriminator,
+  argument layout and account order are unchanged; `rov_admin` stays
+  signer + read-only.
+- New unit test pins the signer/writable flags of `sl8_admin` and `rov_admin`.
+- Existing `register_product_shape` test updated for the new `sl8_admin` flag.
+
 ## [0.3.0] - 2026-10-08
 
 **Breaking** (pre-1.0, so MINOR bump). Adds the lifecycle instructions agreed

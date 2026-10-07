@@ -33,10 +33,46 @@ fn register_product_shape() {
         },
     );
     assert_eq!(ix.accounts.len(), 3);
-    assert!(ix.accounts[0].is_signer && !ix.accounts[0].is_writable);
+    assert!(ix.accounts[0].is_signer && ix.accounts[0].is_writable);
     assert!(ix.accounts[1].is_signer && !ix.accounts[1].is_writable);
     assert!(!ix.accounts[2].is_signer && ix.accounts[2].is_writable);
     assert_eq!(&ix.data[..8], &REGISTER_PRODUCT_DISCRIMINATOR);
+}
+
+/// The vault makes `sl8_admin` the `init` payer of the registry PDA, so the
+/// builder must mark it writable; `rov_admin` only co-signs. Regression test
+/// for v0.3.0, which had `sl8_admin` read-only (worked only when `sl8_admin`
+/// was also the fee payer).
+#[test]
+fn register_product_sl8_admin_is_writable_signer_and_rov_admin_is_readonly_signer() {
+    let (sl8, rov, registry) = (pk(), pk(), pk());
+    let ix = register_product(
+        pk(),
+        sl8,
+        rov,
+        registry,
+        &[],
+        RegisterProductArgs {
+            product_program_id: pk(),
+            fee_split_bps: 500,
+            challenge_sizes: vec![],
+            max_payout_count: 3,
+            reset_price_bps: vec![],
+        },
+    );
+    assert_eq!(ix.accounts[0].pubkey, sl8);
+    assert!(ix.accounts[0].is_signer, "sl8_admin must sign");
+    assert!(
+        ix.accounts[0].is_writable,
+        "sl8_admin pays registry rent: must be writable"
+    );
+    assert_eq!(ix.accounts[1].pubkey, rov);
+    assert!(ix.accounts[1].is_signer, "rov_admin must sign");
+    assert!(
+        !ix.accounts[1].is_writable,
+        "rov_admin is never a fund destination: read-only"
+    );
+    assert_eq!(ix.accounts[2].pubkey, registry);
 }
 
 #[test]

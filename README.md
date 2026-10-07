@@ -112,7 +112,7 @@ reachable from an instruction argument), so enable it only when generating an
 IDL:
 
 ```toml
-setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.3.0", features = ["idl-build"] }
+setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.3.1", features = ["idl-build"] }
 ```
 
 With default features (no `features = [...]`), `anchor-lang` does not appear
