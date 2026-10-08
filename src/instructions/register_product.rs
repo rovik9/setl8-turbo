@@ -48,9 +48,9 @@ pub struct RegisterProductArgs {
 /// 2. `[writable]` `product_registry` -- the vault's `ProductRegistry` account
 ///    (PDA/layout owned by `setl8-vault`, not this crate) that gains the new
 ///    product entry.
-///    3..N `remaining_accounts` -- any further accounts `setl8-vault` requires
-///    (e.g. a system program for allocation) once its `ProductRegistry`
-///    account layout is finalized. An empty slice is valid for now.
+/// 3. `[]` `system_program` (`remaining_accounts[0]`) -- required: the vault
+///    creates `product_registry` with `init`. An empty `remaining_accounts`
+///    slice fails; the vault declares exactly these 4 accounts.
 ///
 /// This instruction has **no CPI-auth identity account** of its own -- it's
 /// gated by the admin multisig, not by CPI-auth. `product_program_id` (inside

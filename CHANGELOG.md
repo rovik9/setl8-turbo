@@ -14,6 +14,54 @@ documented account order, since a consumer pinned to an older tag will
 otherwise silently CPI-fail or misencode data against a newer vault. Once at
 1.0.0, breaking changes bump MAJOR instead.
 
+## [0.4.0] - 2026-10-08
+
+**Minor (pre-1.0 breaking unit): new public API, and `request_payout` is now a
+queue.** Pin consumers to `v0.4.0`. The builder signatures, discriminators and
+args structs are unchanged, but the **`request_payout` `remaining_accounts`
+layout changed from 11 accounts to 7** (the vault no longer pays instantly), so
+a sector caller built against the v0.3.2 docs must be updated. One builder
+flag also changed (`flag_trader_failed`, below).
+
+- **New: payout tally** (`payout_tally` module). A sector-owned account whose
+  fixed layout the vault reads to reconcile requests: `PAYOUT_TALLY_SEED`
+  (`b"payout_tally"`), `derive_payout_tally`, `PayoutTally { requested_count,
+  requested_total }` with `parse` / `write_into`, `TallyError`,
+  `PAYOUT_TALLY_MIN_LEN` (25), `PAYOUT_TALLY_MAGIC` (`b"SL8TALLY"`) and
+  `PAYOUT_TALLY_VERSION` (1). Layout: magic (0..8), version (8), count u64 LE
+  (9..17), total u64 LE (17..25); longer accounts are fine. Contract: bump it
+  by 1 / `amount` in the same transaction as every `request_payout` that
+  returns `Paid` (update after the CPI, once return data says `Paid`); never on
+  `Abandoned`; it never decreases and is never closed; the vault is specified to
+  pause the product on any mismatch, treat a missing account as 0/0 and an
+  unparseable one as a mismatch. **The vault does not read the tally yet (as of
+  `be97396`)**; this is the agreed contract for sectors to implement now.
+- **New: `PAYOUT_CLAIM_SEED` and `derive_payout_claim(vault_program_id,
+  trader_state, request_id)`** for the vault's `PayoutClaim` PDA.
+- **Docs: `request_payout` is now a queue** (the vault queues claims instead of
+  paying instantly). The builder docs state the vault's 7-account layout:
+  `sector_authority`, `product_registry` (writable), then
+  `trader_state` (writable), `vault_state` (**now writable**),
+  `payout_claim` (writable), `payer` (signer, writable) and `system_program`.
+  `PayoutOutcome::Paid` now means "accepted and queued; no tokens moved";
+  `Abandoned` means no claim was created. All pool/destination token accounts
+  were removed from the `request_payout` docs.
+- **New `heartbeat` module (docs only)** describing `begin_heartbeat`,
+  `settle_claims` and `finalize_heartbeat`: permissionless, pro rata, larger
+  pool first, unpaid remainder carried over. No builders were added for them.
+- **Fix: `flag_trader_failed` marks `product_registry` read-only.** The vault
+  declares it read-only; v0.3.x marked it writable, which took a needless write
+  lock and forced the sector's outer transaction to mark it writable. A
+  read-only meta is accepted wherever a writable one was, so existing callers
+  keep working.
+- **Docs:** `register_product` now says its `system_program` remaining account
+  is required (an empty slice fails); `record_activity` lists its single
+  remaining account; `BondPosition` / `BondCapTracker` are described as
+  planned, not present in the vault source.
+- New tests: tally roundtrip, golden bytes, every rejection, boundaries, PDA
+  golden vectors, the queued `request_payout` layout, and the
+  `flag_trader_failed` flags. Existing tests are unchanged.
+
 ## [0.3.2] - 2026-10-08
 
 **docs: token-movement account layout; no wire changes** (PATCH). Pin

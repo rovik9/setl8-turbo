@@ -17,7 +17,10 @@ options/predictions/etc).
 ## What this crate is *not*
 
 - No account/state struct definitions. `ProductRegistry`, `TraderState`,
-  `BondPosition`, `BondCapTracker`, etc. live in `setl8-vault`, not here.
+  `PayoutClaim`, etc. live in `setl8-vault`, not here. (`BondPosition` and
+  `BondCapTracker` are *planned* for the vault's bond module; they are not in
+  the vault source yet.) The one exception is the sector-owned **payout tally**,
+  whose byte layout is a cross-program contract; see "Payout tally" below.
 - No business logic. No floor math, no graduation checks, no abandonment
   sweeps.
 - No protocol numbers. No fees, caps, or challenge costs baked in.
@@ -86,9 +89,9 @@ inconsistency -- have been removed from this list; see `CHANGELOG.md`.)
 4. **`product_registry` writable/readonly flags.** Marked writable on every
    registry-touching builder. Checked against the vault: `deposit_fee`,
    `deposit_reset` and `request_payout` declare it `mut`; `flag_trader_failed`
-   only reads it, so its writable flag is unnecessary (it takes a write lock,
-   and the sector's outer transaction must also mark the registry writable).
-   Flags are left as-is in patch releases.
+   only reads it; v0.4.0 corrects the builder to read-only (previously it took
+   a needless write lock and forced the sector's outer transaction to mark the
+   registry writable).
 
 5. **No `VAULT_PROGRAM_ID` constant.** `setl8-vault` isn't deployed, so every
    builder takes `vault_program_id: Pubkey` as an explicit parameter instead
@@ -116,15 +119,72 @@ The vault moves the tokens; sector programs do not.
   when that signature is in the outer transaction. The payment splits as
   `pool = floor(amount * fee_split_bps / 10_000)` to the payout pool of the
   same mint, the exact remainder to the SL8 wallet's token account.
-- **`request_payout`**: paid from the **larger** of the two payout pools (tie
-  goes to USDC), from that single pool only. If it is short, the vault fails
-  with `InsufficientPoolBalance`. Both of the trader's token accounts must
-  exist. For an otherwise-valid call, a stale challenge returns `Ok` without
-  paying, so the sector must read the `PayoutOutcome` return data before
-  telling anyone they were paid.
+- **`request_payout`** (changed in v0.4.0, see below): no longer pays. It
+  **queues** a claim; tokens move later through the vault's heartbeat.
 
 The exact account order and flags for each are in the doc comments on
 `deposit_fee`, `deposit_reset` and `request_payout` in `src/instructions/`.
+
+## Queued payouts and the heartbeat
+
+`request_payout` records a `PayoutClaim` owed to the trader and **moves no
+tokens**. The vault's account list is 7 accounts: `sector_authority`,
+`product_registry` (writable), then `remaining_accounts` =
+`[trader_state (writable), vault_state (writable), payout_claim (writable),
+payer (signer, writable), system_program]`. `payout_claim` is the PDA
+`[b"payout_claim", trader_state, proposed_request_id u64 LE]` under the
+**vault's** program ID (`derive_payout_claim`); `payer` pays its rent. Only
+`sector_authority` and `payer` sign. There are no token accounts in this
+instruction.
+
+The return data is a `PayoutOutcome`, and a successful CPI alone means
+nothing:
+
+- `Paid` = **accepted and queued**, no tokens moved. Tell the trader the payout
+  is *requested*, not paid.
+- `Abandoned` = the challenge was past its inactivity window; no claim was
+  created.
+
+Payment happens later through three permissionless vault instructions that
+anyone may run (this crate documents them in the `heartbeat` module and has no
+builders for them): `begin_heartbeat` snapshots the total owed and the total in
+both pools, `settle_claims` pays batches of claims **pro rata** (the same ratio
+for every claim; larger pool first, straight to the trader's associated token
+accounts), and `finalize_heartbeat` closes the cycle. Whatever is not paid
+stays owed and is carried over to the next cycle.
+
+## Payout tally
+
+Every sector program keeps a small account, its **payout tally**, that the vault
+is specified to read to reconcile what the sector asked to be paid against the
+vault's own records, pausing the product if they disagree. **Status: agreed
+contract; as of vault commit `be97396` the vault does not read or enforce it
+yet.** Sectors should implement it now.
+
+- PDA: `derive_payout_tally(&sector_program_id)`, seed `b"payout_tally"`, owned
+  by the **sector** program.
+- Layout, little-endian, no Anchor discriminator, at least 25 bytes (a sector
+  may append its own data after byte 25):
+
+  | bytes | field |
+  |---|---|
+  | 0..8 | magic `b"SL8TALLY"` |
+  | 8 | version `1` |
+  | 9..17 | `requested_count` (`u64`) |
+  | 17..25 | `requested_total` (`u64`, sum of `amount`) |
+
+- Rules: initialise it with `write_into` (0/0) when you create it. In the
+  **same transaction** as every `request_payout` whose return data is `Paid`,
+  add 1 to the count and the request's `amount` to the total (checked
+  arithmetic; fail the transaction on overflow). Update it *after* the CPI,
+  once you have read `Paid`; never for `Abandoned` (which returns `Ok`). It only
+  ever goes up and the account is never closed or re-initialised. A missing
+  account counts as 0/0; an account that does not parse (including an
+  allocated, all-zero one) is a mismatch. Anchor sectors hold it as an
+  `UncheckedAccount`, since the layout has no Anchor discriminator.
+- Use `PayoutTally::parse` and `PayoutTally::write_into` so the encoding is
+  identical to what the vault reads. The full contract is in the
+  `payout_tally` module docs.
 
 ## Optional `idl-build` feature
 
@@ -135,7 +195,7 @@ reachable from an instruction argument), so enable it only when generating an
 IDL:
 
 ```toml
-setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.3.2", features = ["idl-build"] }
+setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.4.0", features = ["idl-build"] }
 ```
 
 With default features (no `features = [...]`), `anchor-lang` does not appear
@@ -149,7 +209,7 @@ scaffolded assuming **(b), a git-tag-pinned dependency**, since it's the
 simplest option with zero extra infra to start with -- e.g.:
 
 ```toml
-setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.3.2" }
+setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.4.0" }
 ```
 
 This is a placeholder decision, not a final one -- confirm before

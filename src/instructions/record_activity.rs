@@ -37,8 +37,8 @@ pub struct RecordActivityArgs {
 ///    `invoke_signed`).
 /// 1. `[]` `product_registry` -- read-only: the vault reads the product's
 ///    pause accounting so the inactivity clock can freeze during pauses.
-///    2..N `remaining_accounts` -- the challenge's `TraderState` account
-///    (writable, first) and anything else `setl8-vault` requires.
+/// 2. `[writable]` `trader_state` (`remaining_accounts[0]`) -- the
+///    challenge's `TraderState`. The vault declares exactly these 3 accounts.
 pub fn record_activity(
     vault_program_id: Pubkey,
     sector_authority: Pubkey,

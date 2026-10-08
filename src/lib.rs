@@ -13,7 +13,11 @@
 //!
 //! It deliberately does **not** contain:
 //! - any account/state struct definitions (`ProductRegistry`, `TraderState`,
-//!   `BondPosition`, `BondCapTracker`, ...) -- those live in `setl8-vault`
+//!   `PayoutClaim`, ...) -- those live in `setl8-vault`. (`BondPosition` and
+//!   `BondCapTracker` are *planned* for the vault's bond module and are not in
+//!   the vault source yet.) The one exception is the sector-owned
+//!   [`PayoutTally`], whose byte layout is a
+//!   cross-program contract and so is defined here
 //! - any business logic (floor math, graduation checks, abandonment sweeps)
 //! - any protocol numbers (fees, caps, challenge costs)
 //!
@@ -25,13 +29,19 @@
 //! v0.1.0 scaffold makes, that need confirmation before `setl8-vault` starts
 //! depending on this crate for real.
 
+pub mod heartbeat;
 pub mod instructions;
+pub mod payout_tally;
 pub mod types;
 
 #[cfg(test)]
 mod tests;
 
 pub use instructions::*;
+pub use payout_tally::{
+    derive_payout_tally, PayoutTally, TallyError, PAYOUT_TALLY_MAGIC, PAYOUT_TALLY_MIN_LEN,
+    PAYOUT_TALLY_SEED, PAYOUT_TALLY_VERSION,
+};
 pub use types::{ActivityOutcome, ChallengeSize, PayoutOutcome};
 
 use borsh::BorshSerialize;
@@ -75,6 +85,39 @@ pub const SECTOR_AUTHORITY_SEED: &[u8] = b"setl8_sector_authority";
 /// `&[SECTOR_AUTHORITY_SEED, &[bump]]`.
 pub fn derive_sector_authority(sector_program_id: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[SECTOR_AUTHORITY_SEED], sector_program_id)
+}
+
+/// Seed of a `PayoutClaim` PDA: `[PAYOUT_CLAIM_SEED, trader_state,
+/// request_id.to_le_bytes()]` under the **vault's** program ID. One claim is
+/// created per `request_payout` that returns `PayoutOutcome::Paid`
+/// ("accepted and queued"); a later heartbeat cycle pays it, fully or in part.
+/// See [`derive_payout_claim`].
+pub const PAYOUT_CLAIM_SEED: &[u8] = b"payout_claim";
+
+/// Derives the `PayoutClaim` PDA for one accepted `request_payout`. Returns
+/// `(pubkey, bump)`.
+///
+/// `trader_state` is the challenge's `TraderState` account and `request_id` is
+/// the `proposed_request_id` the vault accepted (the challenge's
+/// `payout_count` after the request). A sector program needs this address to
+/// pass the `payout_claim` account in `request_payout`'s `remaining_accounts`.
+///
+/// Unlike [`derive_sector_authority`] this is derived under the **vault's**
+/// program ID, which this crate deliberately does not hardcode (see README),
+/// so the caller supplies it.
+pub fn derive_payout_claim(
+    vault_program_id: &Pubkey,
+    trader_state: &Pubkey,
+    request_id: u64,
+) -> (Pubkey, u8) {
+    Pubkey::find_program_address(
+        &[
+            PAYOUT_CLAIM_SEED,
+            trader_state.as_ref(),
+            &request_id.to_le_bytes(),
+        ],
+        vault_program_id,
+    )
 }
 
 /// Concatenates an Anchor-style 8-byte discriminator with the Borsh-serialized

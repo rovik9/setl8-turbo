@@ -29,11 +29,11 @@ pub struct FlagTraderFailedArgs {
 ///    cryptographic proof of caller identity, since only the real calling
 ///    program can produce a valid `invoke_signed` signature for a PDA
 ///    derived from its own program ID.
-/// 1. `[writable]` `product_registry` -- the vault's `ProductRegistry`
-///    account for `product_program_id`. The vault only reads it here (it
-///    declares it read-only); the builder keeps marking it writable, which
-///    takes a write lock on the registry and means the sector's outer
-///    transaction must also mark it writable.
+/// 1. `[]` `product_registry` -- the vault's `ProductRegistry` account for
+///    `product_program_id`, **read-only**: the vault only reads it (for the
+///    CPI-auth check). v0.3.x marked it writable by mistake, which needlessly
+///    took a write lock and forced the sector's outer transaction to mark it
+///    writable; v0.4.0 corrects the flag to match the vault.
 /// 2. `[writable]` `trader_state` -- the challenge's `TraderState`
 ///    (`remaining_accounts[0]`), marked `Failed`.
 ///
@@ -47,7 +47,7 @@ pub fn flag_trader_failed(
 ) -> Instruction {
     let mut accounts = vec![
         AccountMeta::new_readonly(sector_authority, true),
-        AccountMeta::new(product_registry, false),
+        AccountMeta::new_readonly(product_registry, false),
     ];
     accounts.extend_from_slice(remaining_accounts);
 

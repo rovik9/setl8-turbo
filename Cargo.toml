@@ -1,6 +1,6 @@
 [package]
 name = "setl8-shared-interfaces"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 description = "Shared CPI instruction shapes for cross-program calls between the Setl8 vault and sector programs (lev-trading, options, predictions, ...). No account/state structs, no business logic, no protocol numbers -- see README.md."
 license = "UNLICENSED"

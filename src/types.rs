@@ -92,17 +92,22 @@ impl ActivityOutcome {
 }
 
 /// What `request_payout` did, returned via Solana return data (a single
-/// `u8`). The call can succeed without paying anything: if the challenge is
+/// `u8`). The call can succeed without queuing anything: if the challenge is
 /// stale, the vault records `Abandoned` and returns `Abandoned`, because an
 /// error would revert that state change. A sector program MUST check this
-/// before telling the trader they were paid.
+/// before telling the trader a payout was queued.
+///
+/// Neither outcome means tokens moved: payment happens later, through the
+/// vault's heartbeat (see [`crate::heartbeat`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum PayoutOutcome {
-    /// Payout accepted and recorded.
+    /// Payout **accepted and queued**: a `PayoutClaim` now owes the trader
+    /// `amount`. No tokens moved; a heartbeat cycle pays the claim later.
     Paid = 0,
     /// Challenge was past its inactivity window; it is now `Abandoned` and
-    /// nothing was paid.
+    /// **no claim was created** by this call (claims from earlier requests stay
+    /// owed).
     Abandoned = 1,
 }
 
