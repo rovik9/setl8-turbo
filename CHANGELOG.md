@@ -14,6 +14,35 @@ documented account order, since a consumer pinned to an older tag will
 otherwise silently CPI-fail or misencode data against a newer vault. Once at
 1.0.0, breaking changes bump MAJOR instead.
 
+## [0.3.2] - 2026-10-08
+
+**docs: token-movement account layout; no wire changes** (PATCH). Pin
+consumers to `v0.3.2`. Documentation and tests only: no discriminator, args
+struct, account order, signer/writable flag or public API item changed.
+
+- **Exact `remaining_accounts` layout** documented on `deposit_fee` (12
+  accounts), `deposit_reset` (13) and `request_payout` (11), position by
+  position with signer/writable flags, checked against the vault's `Accounts`
+  structs.
+- **Trader pays the vault directly** (`deposit_fee`, `deposit_reset`): from
+  their own USDC/USDT token account (classic SPL Token, 6 decimals), so the
+  trader must sign the outer transaction. The sector no longer collects the
+  fee. Split rule: `pool = floor(amount * fee_split_bps / 10_000)` to the
+  same-mint payout pool, remainder to the SL8 wallet's token account.
+- **`request_payout`** pays from the larger pool only (tie -> USDC), fails with
+  `InsufficientPoolBalance` if that pool is short, needs both trader token
+  accounts, and requires the sector to read `PayoutOutcome` return data before
+  reporting a payout (a stale challenge on an otherwise-valid call returns `Ok`
+  without paying).
+- Removed stale "(assumed)", "confirm against setl8-vault" and "not known to
+  this crate by design" wording (also on `flag_trader_failed`, the module docs
+  and README). The reason this crate hardcodes no vault PDAs is kept.
+- Noted that the vault only reads `product_registry` in `flag_trader_failed`
+  although the builder marks it writable (left unchanged in a patch release).
+  The vault's current layout is documented, not frozen: if it appends
+  accounts, these docs need updating.
+- New tests pin each documented layout against the builders.
+
 ## [0.3.1] - 2026-10-08
 
 **Bug fix, no wire-format change** (PATCH). Pin consumers to `v0.3.1`.

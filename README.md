@@ -70,22 +70,25 @@ inconsistency -- have been removed from this list; see `CHANGELOG.md`.)
    data stops round-tripping.
 
 3. **`remaining_accounts: &[AccountMeta]` passthrough design.** This crate
-   only knows about signers, `product_registry`, and `sector_authority` -- it
-   deliberately doesn't invent `TraderState`/`BondPosition`/
-   token-account/`system_program` accounts it wasn't told about. Every
-   builder appends a caller-supplied `remaining_accounts` slice after its
-   documented fixed accounts, so callers can pass whatever `setl8-vault`
-   turns out to require without this crate needing a breaking version bump
-   every time the vault's internal account layout changes. Confirm this is
-   the shape you want once `setl8-vault`'s real account layout exists --
-   the alternative is fully fixed, explicit account lists per instruction,
-   which would need that layout decided first.
+   only fixes `sector_authority` and `product_registry`; it does
+   not derive or hardcode the vault's PDAs, mints, pools or wallets, because
+   those depend on the vault's deployment. Every builder appends a
+   caller-supplied `remaining_accounts` slice after its fixed accounts. The
+   vault's current layout for the token-moving instructions (`deposit_fee`,
+   `deposit_reset`, `request_payout`) is documented position by position in
+   each builder's doc comment (see "Token movement" below); the vault
+   validates the accounts with its own constraints (seeds, `VaultState`
+   fields, owner/mint checks, program ids), so a wrong address is rejected
+   rather than silently accepted. The open slice also lets the vault append
+   accounts without a breaking crate version (the docs here then need
+   updating).
 
 4. **`product_registry` writable/readonly flags.** Marked writable on every
-   instruction, on the assumption each one mutates some field of it (new
-   product entry, updated config, fee/payout/failure bookkeeping). These are
-   conservative defaults, not confirmed against real vault semantics -- some
-   may turn out to be read-only.
+   registry-touching builder. Checked against the vault: `deposit_fee`,
+   `deposit_reset` and `request_payout` declare it `mut`; `flag_trader_failed`
+   only reads it, so its writable flag is unnecessary (it takes a write lock,
+   and the sector's outer transaction must also mark the registry writable).
+   Flags are left as-is in patch releases.
 
 5. **No `VAULT_PROGRAM_ID` constant.** `setl8-vault` isn't deployed, so every
    builder takes `vault_program_id: Pubkey` as an explicit parameter instead
@@ -103,6 +106,26 @@ inconsistency -- have been removed from this list; see `CHANGELOG.md`.)
    size/cost pair" in the original spec. Confirm this is sufficient -- no
    currency/denomination field, no min/max bounds, nothing else.
 
+## Token movement (vault Module 2b)
+
+The vault moves the tokens; sector programs do not.
+
+- **`deposit_fee` / `deposit_reset`**: the **trader pays the vault directly**
+  from their own token account (USDC or USDT, classic SPL Token, 6 decimals).
+  The trader must **sign the transaction**, and the sector's CPI only works
+  when that signature is in the outer transaction. The payment splits as
+  `pool = floor(amount * fee_split_bps / 10_000)` to the payout pool of the
+  same mint, the exact remainder to the SL8 wallet's token account.
+- **`request_payout`**: paid from the **larger** of the two payout pools (tie
+  goes to USDC), from that single pool only. If it is short, the vault fails
+  with `InsufficientPoolBalance`. Both of the trader's token accounts must
+  exist. For an otherwise-valid call, a stale challenge returns `Ok` without
+  paying, so the sector must read the `PayoutOutcome` return data before
+  telling anyone they were paid.
+
+The exact account order and flags for each are in the doc comments on
+`deposit_fee`, `deposit_reset` and `request_payout` in `src/instructions/`.
+
 ## Optional `idl-build` feature
 
 This crate has no `anchor-lang` dependency by default. A consumer that runs
@@ -112,7 +135,7 @@ reachable from an instruction argument), so enable it only when generating an
 IDL:
 
 ```toml
-setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.3.1", features = ["idl-build"] }
+setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.3.2", features = ["idl-build"] }
 ```
 
 With default features (no `features = [...]`), `anchor-lang` does not appear
@@ -126,7 +149,7 @@ scaffolded assuming **(b), a git-tag-pinned dependency**, since it's the
 simplest option with zero extra infra to start with -- e.g.:
 
 ```toml
-setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.2.0" }
+setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.3.2" }
 ```
 
 This is a placeholder decision, not a final one -- confirm before

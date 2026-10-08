@@ -30,14 +30,14 @@ pub struct FlagTraderFailedArgs {
 ///    program can produce a valid `invoke_signed` signature for a PDA
 ///    derived from its own program ID.
 /// 1. `[writable]` `product_registry` -- the vault's `ProductRegistry`
-///    account, read to validate `product_program_id`/`challenge_id` and
-///    (assumed) written as part of failure bookkeeping. Marked writable as a
-///    conservative default -- confirm against `setl8-vault`'s actual
-///    mutation needs.
-///    2..N `remaining_accounts` -- trader/challenge state accounts (`TraderState`,
-///    `BondPosition`, `BondCapTracker`, etc.) and any other accounts
-///    `setl8-vault` requires. None of that layout is known to this crate by
-///    design. An empty slice is valid for now.
+///    account for `product_program_id`. The vault only reads it here (it
+///    declares it read-only); the builder keeps marking it writable, which
+///    takes a write lock on the registry and means the sector's outer
+///    transaction must also mark it writable.
+/// 2. `[writable]` `trader_state` -- the challenge's `TraderState`
+///    (`remaining_accounts[0]`), marked `Failed`.
+///
+/// The vault declares exactly these 3 accounts; no token accounts are involved.
 pub fn flag_trader_failed(
     vault_program_id: Pubkey,
     sector_authority: Pubkey,

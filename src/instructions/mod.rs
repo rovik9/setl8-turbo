@@ -15,16 +15,20 @@
 //!    deployed address, consider adding a `pub const VAULT_PROGRAM_ID: Pubkey`
 //!    to this crate for convenience -- until then, callers must supply it.
 //!
-//! 2. **`remaining_accounts: &[AccountMeta]` passthrough.** This crate
-//!    intentionally does not know `setl8-vault`'s exact PDA/account layout
-//!    (no state structs live here -- see crate root docs). Each builder
-//!    documents the accounts it *does* know about (signers, `product_registry`,
-//!    the CPI-auth identity account) and appends `remaining_accounts` after
-//!    them, so callers can pass whatever vault-specific accounts
-//!    (`TraderState`, `BondPosition`, token accounts, `system_program`, etc.)
-//!    turn out to be required, without this crate needing a breaking version
-//!    bump every time `setl8-vault`'s internal account layout is finalized or
-//!    changes.
+//! 2. **`remaining_accounts: &[AccountMeta]` passthrough.** This crate does
+//!    not derive or hardcode `setl8-vault`'s PDAs, pool/mint addresses or
+//!    wallets (no state structs live here -- see crate root docs), so each
+//!    builder fixes only the two accounts it can know (`sector_authority`
+//!    and `product_registry`) and appends the caller-supplied
+//!    `remaining_accounts` slice after them. For the token-moving
+//!    instructions the vault's current layout is documented: `deposit_fee`,
+//!    `deposit_reset` and `request_payout` list the **exact position and
+//!    flags** of every account they expect, and the caller must pass them in
+//!    that order. The vault validates them with its own constraints (seeds,
+//!    `VaultState` fields, owner/mint checks, program ids), so a wrong
+//!    address is rejected rather than silently accepted. If the vault appends
+//!    accounts later, the docs here must be updated to match; keeping the
+//!    slice open means that needs no breaking version bump.
 
 mod admin_withdraw_marketing_funds;
 mod deposit_fee;
