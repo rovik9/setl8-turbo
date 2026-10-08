@@ -120,3 +120,17 @@ impl PayoutOutcome {
         }
     }
 }
+
+/// Which of the vault's two payout pools an instruction means. Pools are
+/// always handled one at a time: USDC and USDT are never combined.
+///
+/// Borsh-serialized as a single byte, matching the vault's own `PoolSide`
+/// enum: `Usdc` = 0, `Usdt` = 1. Any other byte fails to deserialize.
+#[derive(BorshSerialize, BorshDeserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum PoolSide {
+    /// The USDC pool.
+    Usdc = 0,
+    /// The USDT pool.
+    Usdt = 1,
+}

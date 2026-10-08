@@ -1,6 +1,6 @@
 //! Smoke tests: every builder produces an `Instruction` with the expected
 //! discriminator prefix and the documented fixed account count (before
-//! `remaining_accounts`). Not a substitute for on-chain integration testing
+//! `remaining_accounts`; `admin_withdraw_marketing_funds` has none). Not a substitute for on-chain integration testing
 //! against a real `setl8-vault` once one exists -- just a guard against
 //! obvious regressions (wrong account order, discriminator drift, signer
 //! flags, etc.) in this crate's own shapes.
@@ -119,16 +119,28 @@ fn update_product_config_shape() {
 
 #[test]
 fn admin_withdraw_marketing_funds_shape() {
+    // Rewritten for the v0.4.1 builder (the old signature was removed because it
+    // did not match the vault). Stricter than before: it pins the account
+    // count, every signer/writable flag, the discriminator and the data length.
     let ix = admin_withdraw_marketing_funds(
         pk(),
         pk(),
         pk(),
         pk(),
         pk(),
-        &[],
-        AdminWithdrawMarketingFundsArgs { amount: 1_000_000 },
+        pk(),
+        pk(),
+        pk(),
+        AdminWithdrawMarketingFundsArgs {
+            pool: PoolSide::Usdc,
+            amount: 1_000_000,
+        },
     );
-    assert_eq!(ix.accounts.len(), 4);
+    assert_eq!(ix.accounts.len(), 7);
+    assert!(ix.accounts[0].is_signer && !ix.accounts[0].is_writable);
+    assert!(ix.accounts[1].is_signer && !ix.accounts[1].is_writable);
+    assert!(!ix.accounts[2].is_signer && ix.accounts[2].is_writable);
+    assert_eq!(ix.data.len(), 17);
     assert_eq!(&ix.data[..8], &ADMIN_WITHDRAW_MARKETING_FUNDS_DISCRIMINATOR);
 }
 
@@ -650,9 +662,9 @@ const QUEUED_PAYOUT_REMAINING: [Spec; 5] = [
 
 // Note: this checks that the builder passes the documented `remaining_accounts`
 // through unchanged and that `derive_payout_claim` yields the address documented
-// at position 4. The layout itself is pinned by the documentation (verified by
-// hand against vault be97396's `RequestPayout` struct); this crate cannot read
-// the vault's code, so the test cannot detect later vault drift on its own.
+// at position 4. On its own it cannot detect later vault drift; that is covered
+// by the `vault_source_*` tests below, which parse the vault's source when it is
+// present next to this repo.
 #[test]
 fn request_payout_queued_layout_round_trips_through_the_builder() {
     let (vault, authority, registry) = (pk(), pk(), pk());
@@ -1081,4 +1093,473 @@ fn tally_ignores_distinct_trailing_data_and_write_preserves_it() {
     newer.write_into(&mut buf).unwrap();
     assert_eq!(&buf[25..], &sector_data[..], "second write keeps it too");
     assert_eq!(PayoutTally::parse(&buf), Ok(newer));
+}
+
+// ---------------------------------------------------------------------------
+// v0.4.1: admin_withdraw_marketing_funds matches the vault; discriminators;
+// vault-source cross-checks.
+// ---------------------------------------------------------------------------
+
+use solana_program::instruction::Instruction;
+
+use crate::PoolSide;
+
+/// `sha256("global:<name>")[..8]`, recomputed here rather than trusted.
+fn anchor_discriminator(name: &str) -> [u8; 8] {
+    let h = solana_program::hash::hash(format!("global:{name}").as_bytes()).to_bytes();
+    let mut d = [0u8; 8];
+    d.copy_from_slice(&h[..8]);
+    d
+}
+
+#[test]
+fn every_discriminator_equals_sha256_of_the_instruction_name() {
+    let table: [(&str, [u8; 8]); 11] = [
+        ("register_product", REGISTER_PRODUCT_DISCRIMINATOR),
+        ("reactivate_product", REACTIVATE_PRODUCT_DISCRIMINATOR),
+        ("update_product_config", UPDATE_PRODUCT_CONFIG_DISCRIMINATOR),
+        (
+            "admin_withdraw_marketing_funds",
+            ADMIN_WITHDRAW_MARKETING_FUNDS_DISCRIMINATOR,
+        ),
+        ("pause_product", PAUSE_PRODUCT_DISCRIMINATOR),
+        ("deposit_fee", DEPOSIT_FEE_DISCRIMINATOR),
+        ("deposit_reset", DEPOSIT_RESET_DISCRIMINATOR),
+        ("record_activity", RECORD_ACTIVITY_DISCRIMINATOR),
+        ("mark_abandoned", MARK_ABANDONED_DISCRIMINATOR),
+        ("request_payout", REQUEST_PAYOUT_DISCRIMINATOR),
+        ("flag_trader_failed", FLAG_TRADER_FAILED_DISCRIMINATOR),
+    ];
+    for (name, constant) in &table {
+        assert_eq!(&anchor_discriminator(name), constant, "{name}");
+    }
+    // The one the vault audit found wrong-shaped: pin the literal bytes too.
+    assert_eq!(
+        ADMIN_WITHDRAW_MARKETING_FUNDS_DISCRIMINATOR,
+        [149, 0, 251, 20, 103, 248, 17, 186]
+    );
+    assert_eq!(
+        anchor_discriminator("admin_withdraw_marketing_funds"),
+        [149, 0, 251, 20, 103, 248, 17, 186]
+    );
+}
+
+#[test]
+fn pool_side_is_one_borsh_byte_usdc_zero_usdt_one() {
+    use borsh::{BorshDeserialize, BorshSerialize};
+    assert_eq!(PoolSide::Usdc as u8, 0);
+    assert_eq!(PoolSide::Usdt as u8, 1);
+    assert_eq!(PoolSide::Usdc.try_to_vec().unwrap(), vec![0]);
+    assert_eq!(PoolSide::Usdt.try_to_vec().unwrap(), vec![1]);
+    assert_eq!(PoolSide::try_from_slice(&[0]).unwrap(), PoolSide::Usdc);
+    assert_eq!(PoolSide::try_from_slice(&[1]).unwrap(), PoolSide::Usdt);
+    assert!(PoolSide::try_from_slice(&[2]).is_err());
+    assert!(PoolSide::try_from_slice(&[255]).is_err());
+    assert!(PoolSide::try_from_slice(&[]).is_err());
+}
+
+#[test]
+fn admin_withdraw_data_bytes_are_exact_for_both_pools() {
+    let build = |pool, amount| {
+        admin_withdraw_marketing_funds(
+            pk(),
+            pk(),
+            pk(),
+            pk(),
+            pk(),
+            pk(),
+            pk(),
+            pk(),
+            AdminWithdrawMarketingFundsArgs { pool, amount },
+        )
+        .data
+    };
+    let d = ADMIN_WITHDRAW_MARKETING_FUNDS_DISCRIMINATOR;
+
+    // asymmetric amount so any endianness / offset slip shows
+    let usdc = build(PoolSide::Usdc, 0x0102_0304_0506_0708);
+    assert_eq!(usdc.len(), 17);
+    assert_eq!(
+        usdc,
+        vec![
+            d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], // discriminator
+            0,    // pool = Usdc
+            0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, // amount, little-endian
+        ]
+    );
+    let usdt = build(PoolSide::Usdt, 0x0102_0304_0506_0708);
+    assert_eq!(usdt.len(), 17);
+    assert_eq!(usdt[8], 1, "pool = Usdt");
+    assert_eq!(&usdt[9..], &usdc[9..], "amount bytes do not depend on pool");
+    assert_eq!(&usdt[..8], &usdc[..8]);
+
+    // a realistic $750.000001 and the extremes
+    assert_eq!(
+        build(PoolSide::Usdt, 750_000_001),
+        vec![d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], 1, 129, 23, 180, 44, 0, 0, 0, 0,]
+    );
+    let zero = build(PoolSide::Usdc, 0);
+    assert_eq!(&zero[8..], &[0u8; 9]);
+    let max = build(PoolSide::Usdt, u64::MAX);
+    assert_eq!(&max[8..], &[1, 255, 255, 255, 255, 255, 255, 255, 255]);
+}
+
+#[test]
+fn admin_withdraw_args_round_trip() {
+    use borsh::{BorshDeserialize, BorshSerialize};
+    for pool in [PoolSide::Usdc, PoolSide::Usdt] {
+        for amount in [0u64, 1, 750_000_001, u64::MAX] {
+            let args = AdminWithdrawMarketingFundsArgs { pool, amount };
+            let bytes = args.try_to_vec().unwrap();
+            assert_eq!(bytes.len(), 9);
+            assert_eq!(
+                AdminWithdrawMarketingFundsArgs::try_from_slice(&bytes).unwrap(),
+                args
+            );
+        }
+    }
+    // an unknown pool byte is rejected, not coerced
+    let mut bad = vec![2u8];
+    bad.extend_from_slice(&5u64.to_le_bytes());
+    assert!(AdminWithdrawMarketingFundsArgs::try_from_slice(&bad).is_err());
+}
+
+/// The vault's `AdminWithdrawMarketingFunds` accounts, in order, as
+/// `(name, is_signer, is_writable)`.
+const ADMIN_WITHDRAW_ACCOUNTS: [Spec; 7] = [
+    ("sl8_admin", true, false),
+    ("rov_admin", true, false),
+    ("vault_state", false, true),
+    ("mint", false, false),
+    ("pool_token_account", false, true),
+    ("sl8_token_account", false, true),
+    ("token_program", false, false),
+];
+
+fn admin_withdraw_ix() -> (Instruction, [Pubkey; 8]) {
+    let keys: [Pubkey; 8] = std::array::from_fn(|_| pk());
+    let ix = admin_withdraw_marketing_funds(
+        keys[0],
+        keys[1],
+        keys[2],
+        keys[3],
+        keys[4],
+        keys[5],
+        keys[6],
+        keys[7],
+        AdminWithdrawMarketingFundsArgs {
+            pool: PoolSide::Usdt,
+            amount: 5,
+        },
+    );
+    (ix, keys)
+}
+
+#[test]
+fn admin_withdraw_accounts_order_signers_and_writables() {
+    let (ix, keys) = admin_withdraw_ix();
+    assert_eq!(ix.program_id, keys[0], "first parameter is the vault id");
+    assert_eq!(ix.accounts.len(), 7, "no remaining accounts");
+    for (i, (name, signer, writable)) in ADMIN_WITHDRAW_ACCOUNTS.iter().enumerate() {
+        let a = &ix.accounts[i];
+        // parameters 1..=7 map to accounts 0..=6, in order
+        assert_eq!(a.pubkey, keys[i + 1], "{name}: position {i}");
+        assert_eq!(a.is_signer, *signer, "{name}: signer flag");
+        assert_eq!(a.is_writable, *writable, "{name}: writable flag");
+    }
+    assert_eq!(ix.accounts.iter().filter(|a| a.is_signer).count(), 2);
+    assert_eq!(ix.accounts.iter().filter(|a| a.is_writable).count(), 3);
+}
+
+// ---- cross-check against the vault's source text -----------------------------
+// The vault repo is a read-only sibling. When its source is on disk, parse its
+// `#[derive(Accounts)]` structs and compare account names, order, signer and
+// writable flags with what these builders produce, so drift (like the old
+// `flag_trader_failed` registry flag or the old admin_withdraw layout) fails a
+// test instead of failing on-chain. Override the location with
+// SETL8_VAULT_SRC; set SETL8_REQUIRE_VAULT_SRC=1 to fail instead of skip when it
+// is missing. Skipped (with a message) otherwise, e.g. in a checkout without the
+// vault next to it.
+
+fn vault_src_dir() -> Option<std::path::PathBuf> {
+    let dir = match std::env::var("SETL8_VAULT_SRC") {
+        Ok(p) => std::path::PathBuf::from(p),
+        Err(_) => std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../setl8-vault/programs/core-vault/src"),
+    };
+    if dir.join("lib.rs").is_file() {
+        Some(dir)
+    } else {
+        assert!(
+            std::env::var("SETL8_REQUIRE_VAULT_SRC").is_err(),
+            "SETL8_REQUIRE_VAULT_SRC is set but the vault source was not found at {}",
+            dir.display()
+        );
+        eprintln!("skipping vault cross-check: {} not found", dir.display());
+        None
+    }
+}
+
+fn has_word(text: &str, word: &str) -> bool {
+    text.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .any(|w| w == word)
+}
+
+/// `(name, is_signer, is_writable)` for each field of `pub struct <name><'info>`.
+///
+/// Deliberately simple text parsing. Known limits: a signer is recognised only
+/// by a type that starts with `Signer`; writable only by the words `mut`,
+/// `init` or `init_if_needed` in the field's `#[account(..)]` attribute;
+/// attributes must end a line with `]`. That holds for every struct it is applied
+/// to (the self-test below shows the shapes it handles); a new shape would make
+/// it fail loudly rather than pass.
+fn vault_accounts(src: &str, struct_name: &str) -> Vec<(String, bool, bool)> {
+    let marker = format!("pub struct {struct_name}<");
+    let start = src
+        .find(&marker)
+        .unwrap_or_else(|| panic!("struct {struct_name} not found in the vault source"));
+    let open = src[start..].find('{').unwrap() + start + 1;
+    let close = src[open..].find("\n}").unwrap() + open;
+
+    let mut out = Vec::new();
+    let mut attr = String::new();
+    let mut depth = 0i32;
+    let mut in_attr = false;
+    for line in src[open..close].lines() {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with("//") {
+            continue;
+        }
+        if in_attr || t.starts_with("#[") {
+            in_attr = true;
+            attr.push_str(t);
+            attr.push(' ');
+            depth += t.matches('(').count() as i32 - t.matches(')').count() as i32;
+            if depth <= 0 && t.ends_with(']') {
+                in_attr = false;
+            }
+            continue;
+        }
+        if let Some(rest) = t.strip_prefix("pub ") {
+            let (name, ty) = rest.split_once(':').expect("field has a type");
+            let writable = has_word(&attr, "mut")
+                || has_word(&attr, "init")
+                || has_word(&attr, "init_if_needed");
+            out.push((
+                name.trim().to_string(),
+                ty.trim().starts_with("Signer"),
+                writable,
+            ));
+            attr.clear();
+            depth = 0;
+        }
+    }
+    out
+}
+
+/// Panics if the builder's accounts differ from the vault struct in count, name
+/// order, signer or writable flag. `names` are the builder-side names, in order.
+fn assert_matches_vault(file: &str, struct_name: &str, names: &[&str], ix: &Instruction) {
+    let Some(dir) = vault_src_dir() else { return };
+    let text = std::fs::read_to_string(dir.join(file)).expect("read vault source file");
+    let vault = vault_accounts(&text, struct_name);
+    let vault_names: Vec<&str> = vault.iter().map(|(n, _, _)| n.as_str()).collect();
+    assert_eq!(
+        vault_names, names,
+        "{struct_name}: account names/order differ from the vault"
+    );
+    assert_eq!(
+        ix.accounts.len(),
+        vault.len(),
+        "{struct_name}: account count differs from the vault"
+    );
+    for (i, (name, signer, writable)) in vault.iter().enumerate() {
+        assert_eq!(
+            ix.accounts[i].is_signer, *signer,
+            "{struct_name}.{name}: signer flag differs from the vault"
+        );
+        assert_eq!(
+            ix.accounts[i].is_writable, *writable,
+            "{struct_name}.{name}: writable flag differs from the vault"
+        );
+    }
+}
+
+fn names_of(fixed: &[&'static str], rest: &[Spec]) -> Vec<&'static str> {
+    fixed
+        .iter()
+        .copied()
+        .chain(rest.iter().map(|s| s.0))
+        .collect()
+}
+
+#[test]
+fn vault_source_admin_withdraw_matches_the_builder() {
+    let (ix, _) = admin_withdraw_ix();
+    let names: Vec<&str> = ADMIN_WITHDRAW_ACCOUNTS.iter().map(|s| s.0).collect();
+    assert_matches_vault(
+        "instructions/admin/admin_withdraw_marketing_funds.rs",
+        "AdminWithdrawMarketingFunds",
+        &names,
+        &ix,
+    );
+
+    // The handler's parameter order and the enum's variant order are wire format.
+    let Some(dir) = vault_src_dir() else { return };
+    let lib = std::fs::read_to_string(dir.join("lib.rs")).unwrap();
+    let sig = lib
+        .find("pub fn admin_withdraw_marketing_funds(")
+        .expect("vault exposes admin_withdraw_marketing_funds");
+    let sig = &lib[sig..sig + lib[sig..].find(") -> Result").unwrap()];
+    let compact: String = sig.chars().filter(|c| !c.is_whitespace()).collect();
+    assert!(
+        compact.ends_with("ctx:Context<AdminWithdrawMarketingFunds>,pool:PoolSide,amount:u64,"),
+        "vault takes exactly (ctx, pool, amount) in that order: {sig}"
+    );
+
+    let vs = std::fs::read_to_string(dir.join("state/vault_state.rs")).unwrap();
+    let e = vs.find("pub enum PoolSide {").expect("PoolSide enum");
+    let body = &vs[e..e + vs[e..].find('}').unwrap()];
+    let usdc = body.find("Usdc").expect("Usdc variant");
+    let usdt = body.find("Usdt").expect("Usdt variant");
+    assert!(usdc < usdt, "Usdc is variant 0, Usdt variant 1");
+    assert!(
+        !body.contains('='),
+        "explicit enum discriminants would change the Borsh index: {body}"
+    );
+}
+
+#[test]
+fn vault_source_flag_trader_failed_matches_the_builder() {
+    let remaining = [AccountMeta::new(pk(), false)];
+    let ix = flag_trader_failed(
+        pk(),
+        pk(),
+        pk(),
+        &remaining,
+        FlagTraderFailedArgs {
+            trader_wallet: pk(),
+            product_program_id: pk(),
+            challenge_id: 1,
+        },
+    );
+    assert_matches_vault(
+        "instructions/sector/flag_trader_failed.rs",
+        "FlagTraderFailed",
+        &["sector_authority", "product_registry", "trader_state"],
+        &ix,
+    );
+}
+
+#[test]
+fn vault_source_deposit_fee_deposit_reset_and_request_payout_match_the_documented_layouts() {
+    let fee_rest = remaining_from(&DEPOSIT_FEE_REMAINING);
+    let fee = deposit_fee(
+        pk(),
+        pk(),
+        pk(),
+        &fee_rest,
+        DepositFeeArgs {
+            amount: 1,
+            product_program_id: pk(),
+            challenge_id: 1,
+            trader_wallet: pk(),
+            account_size: 1,
+        },
+    );
+    assert_matches_vault(
+        "instructions/sector/deposit_fee.rs",
+        "DepositFee",
+        &names_of(
+            &["sector_authority", "product_registry"],
+            &DEPOSIT_FEE_REMAINING,
+        ),
+        &fee,
+    );
+
+    let reset_rest = remaining_from(&DEPOSIT_RESET_REMAINING);
+    let reset = deposit_reset(
+        pk(),
+        pk(),
+        pk(),
+        &reset_rest,
+        DepositResetArgs {
+            amount: 1,
+            trader_wallet: pk(),
+            product_program_id: pk(),
+            prev_challenge_id: 1,
+            new_challenge_id: 2,
+            reset_phase: 0,
+        },
+    );
+    assert_matches_vault(
+        "instructions/sector/deposit_reset.rs",
+        "DepositReset",
+        &names_of(
+            &["sector_authority", "product_registry"],
+            &DEPOSIT_RESET_REMAINING,
+        ),
+        &reset,
+    );
+
+    let payout_rest = remaining_from(&QUEUED_PAYOUT_REMAINING);
+    let payout = request_payout(
+        pk(),
+        pk(),
+        pk(),
+        &payout_rest,
+        RequestPayoutArgs {
+            trader_wallet: pk(),
+            amount: 1,
+            product_program_id: pk(),
+            challenge_id: 1,
+            proposed_request_id: 1,
+        },
+    );
+    assert_matches_vault(
+        "instructions/sector/request_payout.rs",
+        "RequestPayout",
+        &names_of(
+            &["sector_authority", "product_registry"],
+            &QUEUED_PAYOUT_REMAINING,
+        ),
+        &payout,
+    );
+}
+
+#[test]
+fn the_vault_source_parser_reads_flags_correctly() {
+    // Guards the cross-check itself: it must not pass vacuously.
+    let src = r#"
+#[derive(Accounts)]
+pub struct Demo<'info> {
+    pub plain_signer: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [A, b.as_ref()],
+        bump = x.bump,
+    )]
+    pub writable_pda: Box<Account<'info, X>>,
+
+    /// docs
+    #[account(address = K @ E::Bad)]
+    pub readonly_signer: Signer<'info>,
+
+    #[account(init, payer = payer, space = 8, seeds = [S], bump)]
+    pub created: Box<Account<'info, X>>,
+
+    pub program: Program<'info, System>,
+}
+"#;
+    assert_eq!(
+        vault_accounts(src, "Demo"),
+        vec![
+            ("plain_signer".to_string(), true, false),
+            ("writable_pda".to_string(), false, true),
+            ("readonly_signer".to_string(), true, false),
+            ("created".to_string(), false, true),
+            ("program".to_string(), false, false),
+        ]
+    );
 }

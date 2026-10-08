@@ -37,8 +37,8 @@ pub const REQUEST_PAYOUT_DISCRIMINATOR: [u8; 8] = [5, 176, 110, 197, 172, 177, 6
 /// After every request that returns `Paid`, the sector must bump its payout
 /// tally by one request and by `amount`, in the same transaction, and must not
 /// touch it for `Abandoned`. See [`crate::payout_tally`] for the contract. The
-/// vault is specified to pause a product whose records and tally disagree, but
-/// as of vault commit `be97396` it does not read the tally yet.
+/// vault's `reconcile_product` pauses a product whose records and tally
+/// disagree.
 #[derive(BorshSerialize, BorshDeserialize, Clone, Debug, PartialEq)]
 pub struct RequestPayoutArgs {
     pub trader_wallet: Pubkey,

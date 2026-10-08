@@ -4,16 +4,18 @@
 //!
 //! # Status
 //!
-//! This is the **agreed contract**. As of vault commit `be97396` the vault does
-//! **not yet read or enforce** the tally: nothing in the vault looks at this
-//! account, and nothing is paused over it today. Sector programs should
-//! implement it now so they are compliant when the vault starts checking.
+//! The vault **enforces** this contract. As of vault commit `686bd71` the
+//! permissionless `reconcile_product` instruction reads the tally with
+//! [`PayoutTally::parse`], compares it with the vault's own books for the
+//! product, and pauses the product on any mismatch. The vault's heartbeat
+//! instructions do not call it: a keeper runs `reconcile_product` for every
+//! product before each `begin_heartbeat` (see `docs/vault-instruction-reference.md`).
 //!
 //! # Contract (read this before writing a sector program)
 //!
 //! * The tally is a PDA **owned by the sector program**, derived with
 //!   [`derive_payout_tally`] (`[PAYOUT_TALLY_SEED]` under the sector's own
-//!   program ID). The vault is to read it; only the sector writes it.
+//!   program ID). The vault reads it (in `reconcile_product`); only the sector writes it.
 //! * Initialise it with [`PayoutTally::write_into`] (`0 / 0`) when the sector
 //!   creates the account. An account that exists but holds no valid header (for
 //!   example freshly allocated and all zero) does not parse and counts as a
@@ -37,12 +39,15 @@
 //!   it, and never close, shrink or re-initialise the account, including during
 //!   a program upgrade or migration. It counts *requests*, not what is still
 //!   owed, so paying, shrinking or closing a claim does not change it.
-//! * The vault is to compare `requested_count` and `requested_total` with its
-//!   own records for the product and **pause that product on any mismatch**. A
-//!   **missing** tally (no account at the PDA address, or one that holds no
-//!   data and is not owned by the sector, such as an address that only
-//!   received lamports) counts as `0 / 0`. An account that exists but does not
-//!   parse (see [`PayoutTally::parse`]) is a mismatch.
+//! * The vault compares `requested_count` with the product's
+//!   `total_requests_emitted` and `requested_total` with its
+//!   `total_requested_amount` (both must be equal) and **pauses that product on
+//!   any mismatch**. A **missing** tally (no account at the PDA address, or one
+//!   that holds no data and is not owned by the sector, such as an address that
+//!   only received lamports) counts as `0 / 0`. An account that does not parse
+//!   (see [`PayoutTally::parse`]), including one owned by the sector that is
+//!   empty or all zero, or one that holds data but is owned by someone else, is
+//!   a mismatch.
 //!
 //! # Byte layout (version 1, little-endian, no Anchor discriminator)
 //!

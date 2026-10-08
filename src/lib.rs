@@ -13,9 +13,8 @@
 //!
 //! It deliberately does **not** contain:
 //! - any account/state struct definitions (`ProductRegistry`, `TraderState`,
-//!   `PayoutClaim`, ...) -- those live in `setl8-vault`. (`BondPosition` and
-//!   `BondCapTracker` are *planned* for the vault's bond module and are not in
-//!   the vault source yet.) The one exception is the sector-owned
+//!   `PayoutClaim`, `BondPosition`, `BondCapTracker`, ...) -- those live in
+//!   `setl8-vault`. The one exception is the sector-owned
 //!   [`PayoutTally`], whose byte layout is a
 //!   cross-program contract and so is defined here
 //! - any business logic (floor math, graduation checks, abandonment sweeps)
@@ -42,7 +41,7 @@ pub use payout_tally::{
     derive_payout_tally, PayoutTally, TallyError, PAYOUT_TALLY_MAGIC, PAYOUT_TALLY_MIN_LEN,
     PAYOUT_TALLY_SEED, PAYOUT_TALLY_VERSION,
 };
-pub use types::{ActivityOutcome, ChallengeSize, PayoutOutcome};
+pub use types::{ActivityOutcome, ChallengeSize, PayoutOutcome, PoolSide};
 
 use borsh::BorshSerialize;
 use solana_program::pubkey::Pubkey;

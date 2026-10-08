@@ -6,7 +6,9 @@
 //! the vault's own IDL. They are described here because a sector program's
 //! `request_payout` only queues a claim, and everyone involved needs to know
 //! what happens to it next. Account lists were read from the vault's
-//! `#[derive(Accounts)]` structs (vault commit `be97396`).
+//! `#[derive(Accounts)]` structs (vault commit `686bd71`). The full reference,
+//! including `reconcile_product`, bond claims and the bond rules, is
+//! `docs/vault-instruction-reference.md`.
 //!
 //! # The payout queue
 //!
@@ -70,10 +72,12 @@
 //! | 5 | writable | `usdt_pool` |
 //! | 6 | | `token_program` (classic SPL Token) |
 //!
-//! followed by 1 to 6 **triples** (the batch limit is set in the vault
-//! program), each `[payout_claim (writable), trader_usdc_ata (writable),
-//! trader_usdt_ata (writable)]`. An empty batch, a length that is not a
-//! multiple of three, or too many triples fails.
+//! followed by 1 to 6 **triples** (`MAX_SETTLE_BATCH` = 6 in the vault), each
+//! `[payout_claim (writable), trader_usdc_ata (writable), trader_usdt_ata
+//! (writable)]`. Add a `SetComputeUnitLimit` of 400,000 to a full batch. An
+//! empty batch, a length that is not a multiple of three, or too many triples
+//! fails. A `payout_claim` is either a trader claim (kind 0) or a bond
+//! withdrawal claim (kind 1); both are settled identically.
 //!
 //! **3. `finalize_heartbeat`** (no arguments). Closes the cycle once every claim
 //! that was eligible at the start has been processed (paid or skipped), and
@@ -93,5 +97,10 @@
 //! * How much is paid, and when, is the vault's business: it depends on the
 //!   pools and on every other open claim. A claim can take several cycles.
 //! * The sector keeps its payout tally in step with accepted requests only;
-//!   see [`payout_tally`](crate::payout_tally) (the vault does not enforce it
-//!   yet).
+//!   see [`payout_tally`](crate::payout_tally). The vault's
+//!   `reconcile_product` pauses a product whose tally disagrees with its books.
+//!
+//! # What a keeper should take from this
+//!
+//! * Before each `begin_heartbeat`, run `reconcile_product` for every active
+//!   product: the heartbeat does not do it for you.

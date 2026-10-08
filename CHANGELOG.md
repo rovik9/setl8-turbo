@@ -14,6 +14,60 @@ documented account order, since a consumer pinned to an older tag will
 otherwise silently CPI-fail or misencode data against a newer vault. Once at
 1.0.0, breaking changes bump MAJOR instead.
 
+## [0.4.1] - 2026-10-09
+
+**Fix: `admin_withdraw_marketing_funds` builder now matches the vault. This is a
+BREAKING builder change** (the old signature and account list are removed), and
+docs for the vault instructions added since v0.4.0. Pin consumers to `v0.4.1`.
+
+- **BREAKING: `admin_withdraw_marketing_funds`.** The old builder took
+  `marketing_funds_source` and `destination_wallet`, built 4 accounts plus
+  `remaining_accounts`, and its args had only `amount`. None of that matched the
+  vault, so the instruction could not have succeeded on-chain. The builder is now
+  `admin_withdraw_marketing_funds(vault_program_id, sl8_admin, rov_admin,
+  vault_state, mint, pool_token_account, sl8_token_account, token_program,
+  args)` with **no `remaining_accounts` parameter**, building exactly the
+  vault's 7 accounts (`sl8_admin` and `rov_admin` read-only signers,
+  `vault_state` writable, `mint` read-only, `pool_token_account` and
+  `sl8_token_account` writable, `token_program` read-only). The args are now
+  `AdminWithdrawMarketingFundsArgs { pool: PoolSide, amount: u64 }`, 17 bytes of
+  instruction data. The discriminator is unchanged
+  (`[149, 0, 251, 20, 103, 248, 17, 186]`, recomputed in a test). Callers must
+  update every call site.
+- **New `PoolSide` enum** (`Usdc` = 0, `Usdt` = 1; one Borsh byte), exported
+  from the crate root.
+- **New docs: `docs/vault-instruction-reference.md`**, linked from the README,
+  with exact account lists, flags, arguments, PDA seeds and rules for
+  `begin_heartbeat`, `settle_claims` (the `[payout_claim, trader_usdc_ata,
+  trader_usdt_ata]` triples, `MAX_SETTLE_BATCH` = 6, 400,000 compute units for a
+  full batch), `finalize_heartbeat`, `reconcile_product` (and the keeper duty to
+  run it for every product before each `begin_heartbeat`), `deposit_bond` and
+  `request_bond_payout`, the claim kinds (0 trader, 1 bond, with the bond-claim
+  seed), and the bond terms, caps, 0.2% deposit (on top) and withdrawal
+  (deducted) fees and maturity-only interest. The `heartbeat` module docs were
+  updated to match. No builders were added for these instructions.
+- **Docs corrected:** the vault now **reads and enforces the payout tally**
+  (`reconcile_product`, vault `686bd71`); v0.4.0 said it did not yet.
+  `BondPosition` / `BondCapTracker` are described as living in the vault, not as
+  planned.
+- **Tests:** discriminators of every builder are recomputed from the instruction
+  names; exact data bytes for both pools; account order and flags; and new
+  cross-checks that, when the vault checkout is next to this repo, parse the
+  vault's `#[derive(Accounts)]` source and compare it with the builders' fixed
+  accounts and the documented `remaining_accounts` layouts (names, order, signer
+  and writable flags) for `admin_withdraw_marketing_funds`, `flag_trader_failed`,
+  `deposit_fee`, `deposit_reset` and `request_payout`. They are **skipped** (with
+  a message) when the vault source is absent; set `SETL8_REQUIRE_VAULT_SRC=1`
+  (and optionally `SETL8_VAULT_SRC=<path>`) to make absence a failure, e.g. for
+  a release check. The existing `admin_withdraw_marketing_funds_shape` test was
+  rewritten for the new signature (stricter than before); every other existing
+  test is unchanged.
+- **Versioning note:** this breaking builder change ships as a PATCH number
+  (0.4.1) at the maintainer's instruction; under this file's own convention
+  (pre-1.0 MINOR = breaking) it would be 0.5.0. Consumers pin exact git tags,
+  so they are unaffected until they move the pin, but anyone using a looser
+  `0.4` range should pin `v0.4.1` explicitly and update their call sites.
+
 ## [0.4.0] - 2026-10-08
 
 **Minor (pre-1.0 breaking unit): new public API, and `request_payout` is now a

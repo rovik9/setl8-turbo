@@ -17,10 +17,9 @@ options/predictions/etc).
 ## What this crate is *not*
 
 - No account/state struct definitions. `ProductRegistry`, `TraderState`,
-  `PayoutClaim`, etc. live in `setl8-vault`, not here. (`BondPosition` and
-  `BondCapTracker` are *planned* for the vault's bond module; they are not in
-  the vault source yet.) The one exception is the sector-owned **payout tally**,
-  whose byte layout is a cross-program contract; see "Payout tally" below.
+  `PayoutClaim`, `BondPosition`, `BondCapTracker`, etc. live in `setl8-vault`,
+  not here. The one exception is the sector-owned **payout tally**, whose byte
+  layout is a cross-program contract; see "Payout tally" below.
 - No business logic. No floor math, no graduation checks, no abandonment
   sweeps.
 - No protocol numbers. No fees, caps, or challenge costs baked in.
@@ -36,7 +35,7 @@ fails to compile in a consumer that hasn't updated to match.
 | `register_product` | 2-of-2 admin multisig (SL8 + Rov) |
 | `reactivate_product` | 2-of-2 admin multisig |
 | `update_product_config` | 2-of-2 admin multisig |
-| `admin_withdraw_marketing_funds` | 2-of-2 admin multisig, fixed SL8 wallet destination |
+| `admin_withdraw_marketing_funds` | 2-of-2 admin multisig; takes `(pool, amount)`, up to 75% of one pool, fixed SL8 wallet destination |
 | `pause_product` | 2-of-2 admin multisig |
 | `deposit_fee` | PDA-signer (`sector_authority`) |
 | `deposit_reset` | PDA-signer (`sector_authority`) |
@@ -47,6 +46,14 @@ fails to compile in a consumer that hasn't updated to match.
 
 Full argument shapes and account ordering are documented as doc comments on
 each builder function in `src/instructions/`.
+
+Vault instructions this crate has **no builders** for (the heartbeat, tally
+reconciliation and the bond vault) are documented with exact account lists,
+flags, arguments, PDA seeds and rules in
+[`docs/vault-instruction-reference.md`](docs/vault-instruction-reference.md):
+`begin_heartbeat`, `settle_claims`, `finalize_heartbeat`, `reconcile_product`,
+`deposit_bond`, `request_bond_payout`, the claim kinds, and the bond terms,
+caps and fees.
 
 ## Open placeholders -- confirm before `setl8-vault` depends on this crate
 
@@ -156,10 +163,11 @@ stays owed and is carried over to the next cycle.
 ## Payout tally
 
 Every sector program keeps a small account, its **payout tally**, that the vault
-is specified to read to reconcile what the sector asked to be paid against the
-vault's own records, pausing the product if they disagree. **Status: agreed
-contract; as of vault commit `be97396` the vault does not read or enforce it
-yet.** Sectors should implement it now.
+reads to reconcile what the sector asked to be paid against the vault's own
+records. **The vault enforces it:** its permissionless `reconcile_product`
+instruction (vault commit `686bd71`) compares the tally with the product's
+books and pauses the product on any mismatch. The heartbeat does not call it; a
+keeper runs it for every product before each `begin_heartbeat`.
 
 - PDA: `derive_payout_tally(&sector_program_id)`, seed `b"payout_tally"`, owned
   by the **sector** program.
@@ -195,7 +203,7 @@ reachable from an instruction argument), so enable it only when generating an
 IDL:
 
 ```toml
-setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.4.0", features = ["idl-build"] }
+setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.4.1", features = ["idl-build"] }
 ```
 
 With default features (no `features = [...]`), `anchor-lang` does not appear
@@ -209,7 +217,7 @@ scaffolded assuming **(b), a git-tag-pinned dependency**, since it's the
 simplest option with zero extra infra to start with -- e.g.:
 
 ```toml
-setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.4.0" }
+setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.4.1" }
 ```
 
 This is a placeholder decision, not a final one -- confirm before
@@ -225,3 +233,9 @@ order).
 cargo build
 cargo test
 ```
+
+When the vault checkout sits next to this repo (`../setl8-vault`), some tests
+also parse the vault's `#[derive(Accounts)]` source and fail if a builder drifts
+from it; they are skipped otherwise. For a release check run
+`SETL8_REQUIRE_VAULT_SRC=1 cargo test` (optionally with `SETL8_VAULT_SRC=<path
+to programs/core-vault/src>`) so a missing checkout is a failure, not a skip.
