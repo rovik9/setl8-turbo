@@ -25,8 +25,10 @@ pub struct UpdateProductConfigArgs {
     pub fee_split_bps: u16,
     /// Replacement cap on outstanding payouts.
     pub max_payout_count: u64,
-    /// Replacement phase-reset price table (basis points of account size per
-    /// 0-based phase). See `RegisterProductArgs::reset_price_bps`.
+    /// Replacement phase-reset price table (basis points of the **tier
+    /// price** per 0-based phase, `10_000` = 100%; before v0.5.0 this meant
+    /// basis points of account size). See `RegisterProductArgs::reset_price_bps`
+    /// and [`crate::reset_price`].
     pub reset_price_bps: Vec<u16>,
 }
 

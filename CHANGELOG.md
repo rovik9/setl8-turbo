@@ -14,6 +14,43 @@ documented account order, since a consumer pinned to an older tag will
 otherwise silently CPI-fail or misencode data against a newer vault. Once at
 1.0.0, breaking changes bump MAJOR instead.
 
+## [0.5.0] - 2026-10-12
+
+**Minor: the MEANING of the phase-reset price changes. No wire change.** Pin
+consumers to `v0.5.0`.
+
+- **`reset_price_bps` is now basis points of the TIER PRICE, not of the account
+  size.** It is still a `Vec<u16>` on `RegisterProductArgs` and
+  `UpdateProductConfigArgs`; the Borsh layout, discriminators, account lists and
+  builders are identical to v0.4.1. `10_000` = 100%. The tier price is the `cost`
+  of the registered `ChallengeSize` whose `size` equals the failed record's
+  account size, indexed by the 0-based phase the trader failed in. Example
+  (lev-trading): `[10000, 11500, 12000, 12750, 13000]` = 100%, 115%, 120%,
+  127.5%, 130% of the tier price.
+- **`DepositResetArgs::amount` must now equal
+  `ceil(tier_cost * reset_price_bps[reset_phase] / 10_000)`**, computed in
+  `u128` and rounded **up**. Before this release the documented formula was
+  `floor(account_size * reset_price_bps[phase] / 10_000)`. Doc comments on
+  `RegisterProductArgs`, `UpdateProductConfigArgs`, `DepositResetArgs` and
+  `ChallengeSize::cost`, the README and `docs/vault-instruction-reference.md`
+  were updated.
+- **New `reset_price(tier_cost: u64, bps: u16) -> Option<u64>`**, exported from
+  the crate root: `ceil(tier_cost * bps / 10_000)` via `u128`, `None` if the
+  result does not fit in a `u64`. The vault and every sector should call it so
+  they compute the identical number.
+- **Compatibility:** a stored `reset_price_bps` table written under the old
+  meaning (e.g. `[100, 150, ...]`, 1%..) would now price a reset at 1% of the
+  tier price. Re-register or `update_product_config` with the new ladder. The
+  vault must adopt the new formula in lockstep with sectors; this crate does not
+  enforce it.
+- **Tests:** exact ladder values at a tier cost of 859,000,000, rounding up,
+  `u64` overflow and its exact boundary, an exhaustive small grid against an
+  independent reference, monotonicity, and a golden Borsh-bytes test proving
+  the `RegisterProductArgs` wire layout. The two existing sample
+  `reset_price_bps` literals in `register_product_shape` and
+  `register_product_args_round_trip_with_reset_table` now use the ladder (no
+  assertion in either test changed); every other existing test is unchanged.
+
 ## [0.4.1] - 2026-10-09
 
 **Fix: `admin_withdraw_marketing_funds` builder now matches the vault. This is a

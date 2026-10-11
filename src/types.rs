@@ -16,7 +16,9 @@ pub struct ChallengeSize {
     /// crate.
     pub size: u64,
     /// The cost a trader pays to attempt a challenge at this size, in the
-    /// same base unit as `size`. Opaque to this crate.
+    /// same base unit as `size`. It is also the base of the phase-reset price
+    /// (`reset_price_bps` is a percentage of this, see [`crate::reset_price`]).
+    /// Otherwise opaque to this crate.
     pub cost: u64,
 }
 

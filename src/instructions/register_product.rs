@@ -29,10 +29,17 @@ pub struct RegisterProductArgs {
     pub challenge_sizes: Vec<ChallengeSize>,
     /// Cap on outstanding payouts the vault will allow for this product.
     pub max_payout_count: u64,
-    /// Phase-specific reset prices as basis points of account size, indexed
-    /// by the 0-based phase a trader failed in (e.g. `[100, 150, ... 450]`
-    /// for 1%..4.5%). Empty means the product offers no phase resets. Used
-    /// by `deposit_reset`; opaque to this crate.
+    /// Phase-specific reset prices as basis points of the **tier price**,
+    /// indexed by the 0-based phase a trader failed in; `10_000` = 100%. The
+    /// tier price is the `cost` of the registered `ChallengeSize` whose `size`
+    /// equals the failed record's account size, so a reset costs
+    /// `ceil(tier_cost * bps / 10_000)` (u128 math, rounded **up**; see
+    /// [`crate::reset_price`]). For example `[10_000, 11_500, 12_000, 12_750,
+    /// 13_000]` is 100%, 115%, 120%, 127.5% and 130% of the tier price. Empty
+    /// means the product offers no phase resets. Used by `deposit_reset`.
+    ///
+    /// **Changed meaning in v0.5.0** (no wire change): before v0.5.0 this was
+    /// basis points of the account *size*, not of the tier price.
     pub reset_price_bps: Vec<u16>,
 }
 

@@ -232,6 +232,32 @@ What a pause does: `deposit_fee`, `deposit_reset` and `request_payout` fail with
 stop claims that are already queued: `settle_claims` never reads the product
 registry, so a paused product's queued claims are still paid.
 
+## Phase-reset pricing (`deposit_reset`)
+
+A reset restarts a `Failed` challenge at the phase it failed in for a percentage
+of the tier price, not a full rebuy. **Since v0.5.0 `reset_price_bps` is basis
+points of the tier price** (`10_000` = 100%); before v0.5.0 it was basis points
+of the account size. The wire format did not change (`reset_price_bps` is still a
+`Vec<u16>`); only the meaning did.
+
+```
+tier_cost = the `cost` of the registered ChallengeSize whose `size` equals the
+            failed record's account size
+amount    = ceil(tier_cost * reset_price_bps[reset_phase] / 10_000)   // u128, rounded UP
+```
+
+`reset_phase` is the 0-based phase the trader failed in. Example ladder
+(lev-trading): `[10000, 11500, 12000, 12750, 13000]` = 100%, 115%, 120%, 127.5%
+and 130% of the tier price. At a tier cost of $859 (`859_000_000`) that is
+`859_000_000`, `987_850_000`, `1_030_800_000`, `1_095_225_000` and
+`1_116_700_000`.
+
+Use this crate's `reset_price(tier_cost, bps) -> Option<u64>` so the vault and
+every sector compute the identical number (`None` only if the result does not
+fit in a `u64`). `DepositResetArgs::amount` must equal it exactly. The vault must
+adopt this meaning in lockstep with the sectors: a vault still pricing resets
+from the account size will reject (or mis-price) amounts computed this way.
+
 ## Bonds
 
 A bond is a deposit of USDC or USDT that earns a fixed interest, paid **only at

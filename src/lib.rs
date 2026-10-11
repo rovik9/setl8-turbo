@@ -119,6 +119,25 @@ pub fn derive_payout_claim(
     )
 }
 
+/// The price of a phase reset, in the vault's 6-decimal base units:
+/// `ceil(tier_cost * bps / 10_000)`, computed in `u128` and **rounded up**.
+///
+/// `tier_cost` is the `cost` of the registered `ChallengeSize` whose `size`
+/// equals the failed record's account size, and `bps` is the product's
+/// `reset_price_bps[reset_phase]`, in basis points of that tier price
+/// (`10_000` = 100%). For example the ladder `[10_000, 11_500, 12_000, 12_750,
+/// 13_000]` is 100%, 115%, 120%, 127.5% and 130% of the tier price, indexed by
+/// the 0-based phase the trader failed in.
+///
+/// Returns `None` when the result does not fit in a `u64`. The vault and every
+/// sector program should call this one function so they compute the identical
+/// number: `DepositResetArgs::amount` must equal it exactly.
+pub fn reset_price(tier_cost: u64, bps: u16) -> Option<u64> {
+    // At most (2^64 - 1) * (2^16 - 1) < 2^80, so the product cannot overflow u128.
+    let product = u128::from(tier_cost) * u128::from(bps);
+    u64::try_from(product.div_ceil(10_000)).ok()
+}
+
 /// Concatenates an Anchor-style 8-byte discriminator with the Borsh-serialized
 /// instruction args to form raw instruction data.
 ///

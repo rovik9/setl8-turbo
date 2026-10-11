@@ -32,7 +32,7 @@ fn register_product_shape() {
                 cost: 100,
             }],
             max_payout_count: 3,
-            reset_price_bps: vec![100, 150, 200, 300, 450],
+            reset_price_bps: vec![10_000, 11_500, 12_000, 12_750, 13_000],
         },
     );
     assert_eq!(ix.accounts.len(), 3);
@@ -348,7 +348,7 @@ fn register_product_args_round_trip_with_reset_table() {
             cost: 30,
         }],
         max_payout_count: 5,
-        reset_price_bps: vec![100, 125, 150, 200, 300, 450],
+        reset_price_bps: vec![10_000, 11_500, 12_000, 12_750, 13_000],
     };
     let mut buf = Vec::new();
     args.serialize(&mut buf).unwrap();
@@ -1562,4 +1562,167 @@ pub struct Demo<'info> {
             ("program".to_string(), false, false),
         ]
     );
+}
+
+// ---------------------------------------------------------------------------
+// v0.5.0: reset price is a percentage of the TIER price (shared helper).
+// ---------------------------------------------------------------------------
+
+use crate::reset_price;
+
+/// Independent reference for `ceil(cost * bps / 10_000)` (no `div_ceil`, no
+/// add-then-divide): quotient plus one if there is any remainder.
+fn reset_price_reference(cost: u64, bps: u16) -> Option<u64> {
+    let n = cost as u128 * bps as u128;
+    let q = n / 10_000;
+    let remainder = n - q * 10_000;
+    let q = if remainder == 0 { q } else { q + 1 };
+    u64::try_from(q).ok()
+}
+
+const LEV_LADDER: [u16; 5] = [10_000, 11_500, 12_000, 12_750, 13_000];
+
+#[test]
+fn reset_price_lev_ladder_at_859_dollars() {
+    let cost = 859_000_000u64;
+    let expected = [
+        859_000_000u64, // 100%
+        987_850_000,    // 115%
+        1_030_800_000,  // 120%
+        1_095_225_000,  // 127.5%
+        1_116_700_000,  // 130%
+    ];
+    for (bps, want) in LEV_LADDER.iter().zip(expected) {
+        assert_eq!(reset_price(cost, *bps), Some(want), "bps {bps}");
+    }
+}
+
+#[test]
+fn reset_price_rounds_up_never_down() {
+    assert_eq!(reset_price(1, 11_500), Some(2), "1.15 rounds up to 2");
+    assert_eq!(reset_price(1, 1), Some(1), "any nonzero fraction rounds up");
+    assert_eq!(reset_price(1, 9_999), Some(1));
+    assert_eq!(reset_price(1, 10_000), Some(1), "exact stays exact");
+    assert_eq!(reset_price(3, 3_334), Some(2), "1.0002 rounds up");
+    assert_eq!(reset_price(3, 3_333), Some(1), "0.9999 rounds up to 1");
+    assert_eq!(
+        reset_price(10_000, 1),
+        Some(1),
+        "exact quotient is not bumped"
+    );
+    assert_eq!(reset_price(10_001, 1), Some(2), "one over rounds up");
+    for bps in [0u16, 1, 9_999, 10_000, 65_535] {
+        assert_eq!(reset_price(0, bps), Some(0), "cost 0, bps {bps}");
+    }
+    for cost in [0u64, 1, 859_000_000, u64::MAX] {
+        assert_eq!(reset_price(cost, 0), Some(0), "bps 0, cost {cost}");
+    }
+}
+
+#[test]
+fn reset_price_overflow_is_none_and_the_boundary_is_exact() {
+    assert_eq!(reset_price(u64::MAX, 65_535), None);
+    assert_eq!(reset_price(u64::MAX, 10_001), None);
+    assert_eq!(reset_price(u64::MAX, 10_000), Some(u64::MAX));
+    // Just under 100% of u64::MAX still fits, and equals the reference.
+    assert!(reset_price(u64::MAX, 9_999).is_some());
+    assert_eq!(
+        reset_price(u64::MAX, 9_999),
+        reset_price_reference(u64::MAX, 9_999)
+    );
+
+    // The largest cost that still fits at the maximum bps, and the next one.
+    let bps = 65_535u16;
+    let fits = (u64::MAX as u128 * 10_000 / bps as u128) as u64;
+    assert!(reset_price(fits, bps).is_some(), "{fits} must fit");
+    assert_eq!(
+        reset_price(fits + 1, bps),
+        None,
+        "{} must not fit",
+        fits + 1
+    );
+    assert_eq!(reset_price(fits, bps), reset_price_reference(fits, bps));
+}
+
+#[test]
+fn reset_price_matches_an_independent_reference_on_a_grid() {
+    let bps_list = [0u16, 1, 2, 9_999, 10_000, 10_001, 11_500, 12_750, 65_535];
+    for cost in 0..=40u64 {
+        for bps in bps_list {
+            assert_eq!(
+                reset_price(cost, bps),
+                reset_price_reference(cost, bps),
+                "cost {cost} bps {bps}"
+            );
+        }
+    }
+    // and on some large values, including the extremes
+    for cost in [
+        859_000_000u64,
+        1_000_000_007,
+        u64::MAX / 2,
+        u64::MAX - 1,
+        u64::MAX,
+    ] {
+        for bps in bps_list {
+            assert_eq!(
+                reset_price(cost, bps),
+                reset_price_reference(cost, bps),
+                "cost {cost} bps {bps}"
+            );
+        }
+    }
+}
+
+#[test]
+fn reset_price_is_monotonic_in_cost_and_in_bps() {
+    for bps in [0u16, 1, 9_999, 10_000, 11_500, 65_535] {
+        let mut prev = 0u64;
+        for cost in 0..=500u64 {
+            let p = reset_price(cost, bps).unwrap();
+            assert!(p >= prev, "not monotonic in cost at {cost}, bps {bps}");
+            prev = p;
+        }
+    }
+    for cost in [0u64, 1, 7, 100, 859_000_000] {
+        let mut prev = 0u64;
+        for bps in (0..=65_535u32).step_by(13).map(|b| b as u16) {
+            let p = reset_price(cost, bps).unwrap();
+            assert!(p >= prev, "not monotonic in bps at {bps}, cost {cost}");
+            prev = p;
+        }
+    }
+}
+
+/// The wire format of the table did not change in v0.5.0: still a Borsh
+/// `Vec<u16>` (u32 length, then each entry as u16 little-endian).
+#[test]
+fn reset_price_bps_wire_layout_is_unchanged_golden_bytes() {
+    use borsh::BorshSerialize;
+    let args = RegisterProductArgs {
+        product_program_id: Pubkey::new_from_array([7u8; 32]),
+        fee_split_bps: 6_500,
+        challenge_sizes: vec![ChallengeSize {
+            size: 2_500,
+            cost: 30,
+        }],
+        max_payout_count: 5,
+        reset_price_bps: LEV_LADDER.to_vec(),
+    };
+    let bytes = args.try_to_vec().unwrap();
+    let mut expected = Vec::new();
+    expected.extend_from_slice(&[7u8; 32]); // product_program_id
+    expected.extend_from_slice(&6_500u16.to_le_bytes()); // fee_split_bps
+    expected.extend_from_slice(&1u32.to_le_bytes()); // challenge_sizes len
+    expected.extend_from_slice(&2_500u64.to_le_bytes());
+    expected.extend_from_slice(&30u64.to_le_bytes());
+    expected.extend_from_slice(&5u64.to_le_bytes()); // max_payout_count
+    expected.extend_from_slice(&5u32.to_le_bytes()); // reset_price_bps len
+    for bps in [10_000u16, 11_500, 12_000, 12_750, 13_000] {
+        expected.extend_from_slice(&bps.to_le_bytes());
+    }
+    assert_eq!(bytes, expected);
+    // spot-check the literal tail bytes: 10_000 = 0x2710, 13_000 = 0x32C8
+    assert_eq!(&bytes[bytes.len() - 10..bytes.len() - 8], &[0x10, 0x27]);
+    assert_eq!(&bytes[bytes.len() - 2..], &[0xC8, 0x32]);
 }

@@ -132,6 +132,25 @@ The vault moves the tokens; sector programs do not.
 The exact account order and flags for each are in the doc comments on
 `deposit_fee`, `deposit_reset` and `request_payout` in `src/instructions/`.
 
+## Phase-reset pricing
+
+`deposit_reset` restarts a `Failed` challenge at the phase it failed in. **Since
+v0.5.0 `reset_price_bps` (still a `Vec<u16>`, no wire change) is basis points of
+the tier price**, `10_000` = 100%; before v0.5.0 it was basis points of the
+account size. The tier price is the `cost` of the registered `ChallengeSize`
+whose `size` equals the failed record's account size, indexed by the 0-based
+phase the trader failed in:
+
+```
+amount = ceil(tier_cost * reset_price_bps[reset_phase] / 10_000)   // u128, rounded UP
+```
+
+The lev-trading ladder `[10000, 11500, 12000, 12750, 13000]` is 100%, 115%, 120%,
+127.5% and 130% of the tier price. Call `reset_price(tier_cost, bps)` (returns
+`None` only if the result does not fit in a `u64`) so the vault and every sector
+compute the identical number. The vault must adopt this meaning in lockstep with
+the sectors.
+
 ## Queued payouts and the heartbeat
 
 `request_payout` records a `PayoutClaim` owed to the trader and **moves no
@@ -203,7 +222,7 @@ reachable from an instruction argument), so enable it only when generating an
 IDL:
 
 ```toml
-setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.4.1", features = ["idl-build"] }
+setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.5.0", features = ["idl-build"] }
 ```
 
 With default features (no `features = [...]`), `anchor-lang` does not appear
@@ -217,7 +236,7 @@ scaffolded assuming **(b), a git-tag-pinned dependency**, since it's the
 simplest option with zero extra infra to start with -- e.g.:
 
 ```toml
-setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.4.1" }
+setl8-shared-interfaces = { git = "https://github.com/rovik9/setl8-turbo", tag = "v0.5.0" }
 ```
 
 This is a placeholder decision, not a final one -- confirm before

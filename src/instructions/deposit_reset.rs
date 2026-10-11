@@ -35,10 +35,13 @@ pub const DEPOSIT_RESET_DISCRIMINATOR: [u8; 8] = [25, 27, 129, 85, 180, 120, 189
 /// transaction, so it never burns the previous record's one-time reset.
 #[derive(BorshSerialize, BorshDeserialize, Clone, Debug, PartialEq)]
 pub struct DepositResetArgs {
-    /// Reset price being paid, in 6-decimal base units of the mint used. The
-    /// vault checks it equals `floor(account_size * reset_price_bps[reset_phase]
-    /// / 10_000)` for the previous record's account size, and that the
-    /// trader's token account holds at least this much.
+    /// Reset price being paid, in 6-decimal base units of the mint used. It
+    /// must equal `ceil(tier_cost * reset_price_bps[reset_phase] / 10_000)`,
+    /// computed in `u128` and rounded **up** (see [`crate::reset_price`]),
+    /// where `tier_cost` is the `cost` of the registered `ChallengeSize` whose
+    /// `size` equals the previous record's account size, and the trader's token
+    /// account must hold at least this much. (Before v0.5.0 the base was the
+    /// account size itself, not the tier price.)
     pub amount: u64,
     /// The paying trader. Must be the key of the `trader` signer account.
     pub trader_wallet: Pubkey,
